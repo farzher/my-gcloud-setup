@@ -12,8 +12,12 @@ TARGET="${1:-latest}"
 NO_RESTART=0
 if [ "${2:-}" = '--no-restart' ]; then NO_RESTART=1; fi
 exec 9>/run/lock/web-state.lock
-flock -n 9 || { echo 'A backup or restore is already running.' >&2; exit 1; }
+flock -n 9 || { echo 'Another deploy, backup, or restore is already running.' >&2; exit 1; }
 install -d -m 0755 "$STATE"
+if [ "$NO_RESTART" -eq 1 ] && [ -s "$STATE/current-slot" ]; then
+  echo '--no-restart is only valid before the first deployment.' >&2
+  exit 1
+fi
 if ! git ls-remote --exit-code "$REMOTE" refs/heads/backup >/dev/null 2>&1; then
   echo 'No backup branch exists yet; starting with fresh server state.'
   exit 0
@@ -21,7 +25,7 @@ fi
 TMP="$(mktemp -d /var/tmp/web-restore.XXXXXX)"
 DATA_NEW="$STATE/.data-restore.$$"
 DATA_OLD="$STATE/.data-before-restore.$$"
-trap 'rm -rf "$TMP" "$DATA_NEW"' EXIT
+trap 'rm -rf "$TMP" "$DATA_NEW"; sudo -u postgres dropdb --if-exists web_restore >/dev/null 2>&1 || true' EXIT
 
 git clone -q --depth 1 --filter=blob:none --no-checkout --single-branch --branch backup "$REMOTE" "$TMP/repo"
 cd "$TMP/repo"
@@ -72,39 +76,39 @@ stream_database | sudo -u postgres pg_restore --exit-on-error -d web_restore
 # a second complete copy of the persistent-file tree during restore.
 install -d -m 0750 "$DATA_NEW"
 FILES_TREE="$(git rev-parse "HEAD:$FILES_PREFIX")"
-  while IFS= read -r -d '' ENTRY; do
-    META="${ENTRY%%$'\t'*}"
-    REL="${ENTRY#*$'\t'}"
-    case "$REL" in .web-backup-large/*) continue;; esac
+while IFS= read -r -d '' ENTRY; do
+  META="${ENTRY%%$'\t'*}"
+  REL="${ENTRY#*$'\t'}"
+  case "$REL" in .web-backup-large/*) continue;; esac
+  case "$REL" in ''|/*|..|../*|*/..|*/../*) echo "Unsafe backup path: $REL" >&2; exit 1;; esac
+  MODE="${META%% *}"
+  REST="${META#* }"; TYPE="${REST%% *}"; SHA="${REST##* }"
+  [ "$TYPE" = blob ] || continue
+  DEST="$DATA_NEW/$REL"
+  mkdir -p "$(dirname "$DEST")"
+  git cat-file blob "$SHA" >"$DEST"
+  if [ "$MODE" = 100755 ]; then chmod 755 "$DEST"; else chmod 644 "$DEST"; fi
+done < <(git ls-tree -r -z "$FILES_TREE")
+
+MANIFEST_PATH="$FILES_PREFIX/.web-backup-large/manifest.tsv"
+if git cat-file -e "HEAD:$MANIFEST_PATH" 2>/dev/null; then
+  MANIFEST="$TMP/large-files.tsv"
+  git cat-file blob "HEAD:$MANIFEST_PATH" >"$MANIFEST"
+  while IFS=$'\t' read -r PATH_B64 ID PERM; do
+    [ -n "$PATH_B64" ] || continue
+    REL="$(printf '%s' "$PATH_B64" | base64 -d)"
     case "$REL" in ''|/*|..|../*|*/..|*/../*) echo "Unsafe backup path: $REL" >&2; exit 1;; esac
-    MODE="${META%% *}"
-    REST="${META#* }"; TYPE="${REST%% *}"; SHA="${REST##* }"
-    [ "$TYPE" = blob ] || continue
+    PART_TREE="$(git rev-parse "HEAD:$FILES_PREFIX/.web-backup-large/$ID")"
     DEST="$DATA_NEW/$REL"
     mkdir -p "$(dirname "$DEST")"
-    git cat-file blob "$SHA" >"$DEST"
-    if [ "$MODE" = 100755 ]; then chmod 755 "$DEST"; else chmod 644 "$DEST"; fi
-  done < <(git ls-tree -r -z "$FILES_TREE")
-
-  MANIFEST_PATH="$FILES_PREFIX/.web-backup-large/manifest.tsv"
-  if git cat-file -e "HEAD:$MANIFEST_PATH" 2>/dev/null; then
-    MANIFEST="$TMP/large-files.tsv"
-    git cat-file blob "HEAD:$MANIFEST_PATH" >"$MANIFEST"
-    while IFS=$'\t' read -r PATH_B64 ID PERM; do
-      [ -n "$PATH_B64" ] || continue
-      REL="$(printf '%s' "$PATH_B64" | base64 -d)"
-      case "$REL" in ''|/*|..|../*|*/..|*/../*) echo "Unsafe backup path: $REL" >&2; exit 1;; esac
-      PART_TREE="$(git rev-parse "HEAD:$FILES_PREFIX/.web-backup-large/$ID")"
-      DEST="$DATA_NEW/$REL"
-      mkdir -p "$(dirname "$DEST")"
-      : >"$DEST"
-      while read -r MODE TYPE SHA PART; do
-        [ "$TYPE" = blob ] || continue
-        git cat-file blob "$SHA" >>"$DEST"
-      done < <(git ls-tree "$PART_TREE" | sort -k4)
-      chmod "$PERM" "$DEST"
-    done <"$MANIFEST"
-  fi
+    : >"$DEST"
+    while read -r MODE TYPE SHA PART; do
+      [ "$TYPE" = blob ] || continue
+      git cat-file blob "$SHA" >>"$DEST"
+    done < <(git ls-tree "$PART_TREE" | sort -k4)
+    chmod "$PERM" "$DEST"
+  done <"$MANIFEST"
+fi
 
 SLOT="$(cat "$STATE/current-slot" 2>/dev/null || true)"
 PORT=''
@@ -161,7 +165,7 @@ if [ "$NO_RESTART" -eq 0 ] && [ -n "$SLOT" ]; then
   if ! pm2 restart "web-$SLOT" >/dev/null; then rollback_state; echo 'Restore rolled back because the web process would not restart.' >&2; exit 1; fi
   READY=0
   for _ in $(seq 1 30); do
-    if curl -sS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/"; then READY=1; break; fi
+    if curl -fsS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/"; then READY=1; break; fi
     sleep 0.1
   done
   if [ "$READY" != 1 ]; then rollback_state; echo 'Restore rolled back because the restored site did not become ready.' >&2; exit 1; fi
