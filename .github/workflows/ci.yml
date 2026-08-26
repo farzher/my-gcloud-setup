@@ -17,6 +17,8 @@ jobs:
         with:
           go-version: '1.25.x'
           cache: true
+      - name: Verify formatting
+        run: test -z "$(gofmt -l .)"
       - name: Verify module files
         run: |
           go mod tidy
@@ -24,6 +26,6 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - name: Build Linux
-        run: go build .
+        run: go build -o /tmp/cloud .
       - name: Build Windows
         run: GOOS=windows GOARCH=amd64 go build -o /tmp/cloud.exe .
