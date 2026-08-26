@@ -6,9 +6,8 @@ set -Eeuo pipefail
 REPO=/website
 DATA="$REPO/data"
 STATE=/var/lib/website
-LOCK=/run/lock/deploy-web.lock
-exec 8>"$LOCK"
-flock -n 8 || { echo 'Another deployment is already running.' >&2; exit 1; }
+exec 9>/run/lock/web-state.lock
+flock -n 9 || { echo 'Another deploy, backup, or restore is already running.' >&2; exit 1; }
 install -d -m 0750 "$DATA"
 install -d -m 0755 "$STATE"
 cd "$REPO"
@@ -20,19 +19,23 @@ export NODE_OPTIONS=--max-old-space-size=224
 pkg_hash() { { cat package.json; [ ! -f package-lock.json ] || cat package-lock.json; } | sha256sum | awk '{print $1}'; }
 HASH="$(pkg_hash)"
 if [ ! -d node_modules ] || [ "$(cat "$STATE/deps-hash" 2>/dev/null || true)" != "$HASH" ]; then
-  npm install --omit=dev --no-audit --no-fund
+  if [ -f package-lock.json ]; then
+    npm ci --omit=dev --no-audit --no-fund
+  else
+    npm install --omit=dev --no-audit --no-fund --no-package-lock
+  fi
   HASH="$(pkg_hash)"
   printf '%s\n' "$HASH" >"$STATE/deps-hash"
 fi
 
 # Start the inactive slot first. The live Nginx upstream is untouched until
-# the new process proves it can answer a local HTTP request.
+# the new process proves it can answer a successful local HTTP request.
 pm2 delete "$NAME" >/dev/null 2>&1 || true
 PORT="$PORT" DATA_DIR="$DATA" DATABASE_URL='postgresql:///web?host=/var/run/postgresql' NODE_OPTIONS=--max-old-space-size=224 \
   pm2 start npm --name "$NAME" --max-memory-restart 300M -- start >/dev/null
 READY=0
 for _ in $(seq 1 30); do
-  if curl -sS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/"; then READY=1; break; fi
+  if curl -fsS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/"; then READY=1; break; fi
   sleep 0.1
 done
 if [ "$READY" != 1 ]; then
