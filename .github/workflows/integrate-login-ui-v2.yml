@@ -1,0 +1,141 @@
+name: Integrate login UI v2
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/integrate-login-ui-v2.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch TUI
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path("main.go")
+          s = p.read_text()
+
+          s = s.replace(
+              '\t"fmt"\n\t"os"\n\t"os/exec"\n\t"path/filepath"\n\t"runtime"\n',
+              '\t"fmt"\n\t"io"\n\t"os"\n\t"os/exec"\n\t"path/filepath"\n\t"regexp"\n\t"runtime"\n',
+          )
+          s = s.replace(
+              '\ttea "charm.land/bubbletea/v2"\n\t"charm.land/lipgloss/v2"\n',
+              '\ttea "charm.land/bubbletea/v2"\n\t"charm.land/lipgloss/v2"\n\tqrterminal "github.com/mdp/qrterminal/v3"\n',
+          )
+          s = s.replace(
+              '\tbilling    []billingAccount\n\tbillingPos int\n\tbillingID  string\n',
+              '\tbilling    []billingAccount\n\tbillingPos int\n\tbillingID  string\n\tsignInPos  int\n',
+          )
+
+          old = '''\tcase screenSignIn:\n\t\tswitch k {\n\t\tcase "enter":\n\t\t\tm.busy = true\n\t\t\treturn m, authCmd()\n\t\tcase "r":\n\t\t\tm.busy = true\n\t\t\treturn m, detectCmd(m.cfg)\n\t\tcase "q":\n\t\t\treturn m, tea.Quit\n\t\t}\n'''
+          new = '''\tcase screenSignIn:\n\t\tswitch k {\n\t\tcase "up", "k", "left", "h":\n\t\t\tif m.signInPos > 0 { m.signInPos-- }\n\t\tcase "down", "j", "right", "l", "tab":\n\t\t\tif m.signInPos < 1 { m.signInPos++ } else if k == "tab" { m.signInPos = 0 }\n\t\tcase "1", "b":\n\t\t\tm.busy = true\n\t\t\treturn m, authCmd()\n\t\tcase "2":\n\t\t\tm.busy = true\n\t\t\treturn m, remoteAuthCmd()\n\t\tcase "enter":\n\t\t\tm.busy = true\n\t\t\tif m.signInPos == 1 { return m, remoteAuthCmd() }\n\t\t\treturn m, authCmd()\n\t\tcase "r":\n\t\t\tm.busy = true\n\t\t\treturn m, detectCmd(m.cfg)\n\t\tcase "q":\n\t\t\treturn m, tea.Quit\n\t\t}\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''\tcase screenSignIn:\n\t\treturn m.header() + "\\n\\n" +\n\t\t\t"Google Cloud isn't connected.\\n\\n" +\n\t\t\tbutton("Sign in with Google", true) + "\\n\\n" +\n\t\t\tmutedStyle.Render("gcloud handles the browser login · q quit")\n'''
+          assert old in s
+          s = s.replace(old, '\tcase screenSignIn:\n\t\treturn m.renderSignIn()\n', 1)
+
+          marker = 'func (m model) header() string {\n'
+          signin = '''func (m model) renderSignIn() string {
+          	var b strings.Builder
+          	b.WriteString(m.header())
+          	b.WriteString("\\n\\n")
+          	b.WriteString(titleStyle.Render("Connect Google Cloud"))
+          	b.WriteString("\\n")
+          	b.WriteString(mutedStyle.Render("Choose how you want to sign in."))
+          	b.WriteString("\\n\\n")
+          	b.WriteString(loginChoice("Open browser", "Fastest · sign in on this computer", m.signInPos == 0))
+          	b.WriteString("\\n")
+          	b.WriteString(loginChoice("Scan QR code", "Sign in on another phone or computer", m.signInPos == 1))
+          	b.WriteString("\\n\\n")
+          	b.WriteString(mutedStyle.Render("↑/↓ choose   enter continue   1 browser   2 QR   q quit"))
+          	return b.String()
+          }
+
+          func loginChoice(title, detail string, active bool) string {
+          	marker := "  "
+          	border := muted
+          	if active { marker, border = "› ", accent }
+          	body := marker + title + "\\n  " + mutedStyle.Render(detail)
+          	style := lipgloss.NewStyle().Width(46).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(border)
+          	if active { style = style.Foreground(bright).Bold(true) }
+          	return style.Render(body)
+          }
+
+          '''
+          assert marker in s
+          s = s.replace(marker, signin + marker, 1)
+
+          auth_fn = '''func authCmd() tea.Cmd {\n\tcmd := exec.Command("gcloud", "auth", "login")\n\treturn tea.ExecProcess(cmd, func(err error) tea.Msg { return authFinishedMsg{err: err} })\n}\n\n'''
+          assert auth_fn in s
+          remote_fn = '''func remoteAuthCmd() tea.Cmd {
+          	cmd := exec.Command(os.Args[0], "__remote-auth")
+          	cmd.Stdin = os.Stdin
+          	cmd.Stdout = os.Stdout
+          	cmd.Stderr = os.Stderr
+          	return tea.ExecProcess(cmd, func(err error) tea.Msg { return authFinishedMsg{err: err} })
+          }
+
+          '''
+          s = s.replace(auth_fn, auth_fn + remote_fn, 1)
+
+          helper = Path("cmd/remote-auth/main.go").read_text()
+          helpers = helper[helper.index("var authURLPattern"):helper.index("func main()")]
+          helpers = helpers.replace("renderQR", "renderAuthQR")
+
+          old_main = '''func main() {\n\tm := initialModel()\n\tif _, err := tea.NewProgram(m).Run(); err != nil {\n\t\tfmt.Fprintln(os.Stderr, "cloud:", err)\n\t\tos.Exit(1)\n\t}\n}\n'''
+          assert old_main in s
+          new_main = helpers + '''func runRemoteAuth() error {
+          	cmd := exec.Command("gcloud", "auth", "login", "--no-launch-browser")
+          	writer := &authWriter{out: os.Stdout}
+          	cmd.Stdout = writer
+          	cmd.Stderr = writer
+          	cmd.Stdin = os.Stdin
+          	return cmd.Run()
+          }
+
+          func main() {
+          	if len(os.Args) > 1 && os.Args[1] == "__remote-auth" {
+          		if err := runRemoteAuth(); err != nil {
+          			fmt.Fprintln(os.Stderr, "remote login failed:", err)
+          			os.Exit(1)
+          		}
+          		return
+          	}
+
+          	m := initialModel()
+          	if _, err := tea.NewProgram(m).Run(); err != nil {
+          		fmt.Fprintln(os.Stderr, "cloud:", err)
+          		os.Exit(1)
+          	}
+          }
+          '''
+          s = s.replace(old_main, new_main, 1)
+          p.write_text(s)
+
+          readme = Path("README.md")
+          r = readme.read_text().replace(
+              "1. Sign in through the normal `gcloud auth login` browser flow.",
+              "1. Choose **Open browser** to sign in locally, or **Scan QR code** to authenticate from another device.",
+          )
+          readme.write_text(r)
+
+      - name: Format, clean up, and commit
+        run: |
+          gofmt -w main.go
+          rm -f remote-login.bat
+          rm -rf cmd/remote-auth
+          rm -f .github/workflows/integrate-login-ui.yml .github/workflows/integrate-login-ui-v2.yml
+          git config user.name "farzher"
+          git config user.email "farzher@farzher.com"
+          git add -A
+          git commit -m "Integrate QR login into TUI"
+          git push
