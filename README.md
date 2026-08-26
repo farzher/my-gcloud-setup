@@ -84,9 +84,13 @@ Retention is grandfather-father-son style:
 
 The same snapshot is reused for daily/weekly/monthly/yearly retention, so Git deduplicates identical blobs. The `backup` branch is force-rewritten as a single root commit on each run, which keeps the retained snapshots without accumulating dump history. Database dumps never go into `main`.
 
+The VM does **not** keep or download the retained backups. Each run initializes a tiny temporary Git repository and fetches the existing `backup` branch with `--filter=blob:none`, so only Git commit/tree metadata is needed to carry retained snapshots forward. Old database blobs remain on GitHub and are referenced by object ID in the new backup tree.
+
+The new PostgreSQL dump is streamed directly into ~90 MiB GitHub-safe chunks, so the VM only needs temporary space for roughly the **current compressed snapshot**, not the current snapshot plus a second split copy. A one-chunk backup is stored as `database.dump`; larger backups use `database.dump.part-*`.
+
 Run `/usr/local/bin/backup-web` manually for an immediate snapshot. Hermes is explicitly instructed to run this command whenever you ask it to make a database backup or snapshot.
 
-If a compressed database dump grows beyond GitHub's normal per-file limit, the backup script automatically splits it into ~90 MiB `database.dump.part-*` files. Restore by concatenating the parts into `pg_restore`; backups do not stop merely because the database exceeds 100 MB.
+Restore an unsplit snapshot with `pg_restore -d web database.dump`. Restore a split snapshot with `cat database.dump.part-* | pg_restore -d web`.
 
 ## Rebuilds
 
