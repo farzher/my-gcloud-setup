@@ -94,11 +94,14 @@ case "$SLOT" in
   green) PORT=3002 ;;
   *) exit 1 ;;
 esac
+nginx -T 2>/dev/null | grep -Fq "server 127.0.0.1:$PORT;"
 pm2 describe "web-$SLOT" >/dev/null
 curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"
 `
 	if domain != "" {
-		script += `[ -s /etc/letsencrypt/live/` + domain + `/fullchain.pem ]
+		cert := "/etc/letsencrypt/live/" + domain + "/fullchain.pem"
+		script += `[ -s ` + shellQuote(cert) + ` ]
+nginx -T 2>/dev/null | grep -Fq ` + shellQuote("ssl_certificate "+cert) + `
 `
 	}
 	script += `printf 'ready\n'
