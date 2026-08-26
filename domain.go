@@ -70,6 +70,7 @@ hermes auth status openai-codex | grep -Eqi 'logged in|authenticated'
 grep -q '^## Persistent application files$' /root/.hermes/skills/farzher-web-development/SKILL.md
 [ -d /website/.git ]
 [ "$(git -C /website remote get-url origin)" = ` + shellQuote("git@github.com:"+cfg.Repo+".git") + ` ]
+grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts
 [ -d /website/data ]
 grep -qxF 'data/' /website/.gitignore
 [ -f /var/lib/website/initialized ]
