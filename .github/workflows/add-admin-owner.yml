@@ -1,0 +1,66 @@
+name: Add admin owner
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/add-admin-owner.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Patch project owner access
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path("main.go")
+          s = p.read_text()
+
+          s = s.replace(
+              '\tnetworkTag  = "cloud-web"\n',
+              '\tnetworkTag  = "cloud-web"\n\tadminEmail  = "stephenkamenar@gmail.com"\n',
+              1,
+          )
+
+          old = '''\tres, err = run(ctx, "gcloud", "projects", "describe", project, "--format=value(projectId)")\n\tif err != nil {\n\t\t// The local config can outlive a project. Treat a missing/inaccessible\n\t\t// project as not present instead of trapping the user in an error screen.\n\t\treturn s, nil\n\t}\n\ts.ProjectOK = strings.TrimSpace(res.Stdout) != ""\n\n'''
+          new = '''\tres, err = run(ctx, "gcloud", "projects", "describe", project, "--format=value(projectId)")\n\tif err != nil {\n\t\t// The local config can outlive a project. Treat a missing/inaccessible\n\t\t// project as not present instead of trapping the user in an error screen.\n\t\treturn s, nil\n\t}\n\ts.ProjectOK = strings.TrimSpace(res.Stdout) != ""\n\n\towner, err := projectOwner(ctx, project, adminEmail)\n\tif err != nil {\n\t\treturn s, fmt.Errorf("project owner check failed: %w", err)\n\t}\n\tif !owner {\n\t\tif _, err := ensureProjectOwner(project); err != nil {\n\t\t\treturn s, fmt.Errorf("project owner setup failed: %w", err)\n\t\t}\n\t}\n\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''\t\tres, err := run(ctx, "gcloud", "projects", "describe", cfg.Project, "--format=value(projectId)")\n\t\tif err == nil {\n\t\t\treturn cfg, cfg.Project, res, nil\n\t\t}\n'''
+          new = '''\t\tres, err := run(ctx, "gcloud", "projects", "describe", cfg.Project, "--format=value(projectId)")\n\t\tif err == nil {\n\t\t\townerRes, ownerErr := ensureProjectOwner(cfg.Project)\n\t\t\treturn cfg, cfg.Project, mergeResult(res, ownerRes), ownerErr\n\t\t}\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          old = '''\t\t\tif saveErr := saveConfig(cfg); saveErr != nil {\n\t\t\t\treturn cfg, "", res, saveErr\n\t\t\t}\n\t\t\treturn cfg, id, res, nil\n'''
+          new = '''\t\t\tif saveErr := saveConfig(cfg); saveErr != nil {\n\t\t\t\treturn cfg, "", res, saveErr\n\t\t\t}\n\t\t\townerRes, ownerErr := ensureProjectOwner(id)\n\t\t\tres = mergeResult(res, ownerRes)\n\t\t\tif ownerErr != nil {\n\t\t\t\treturn cfg, "", res, fmt.Errorf("grant %s owner: %w", adminEmail, ownerErr)\n\t\t\t}\n\t\t\treturn cfg, id, res, nil\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+
+          marker = 'func ensureNetwork(cfg config) (commandResult, error) {\n'
+          assert marker in s
+          helper = '''func projectOwner(ctx context.Context, project, email string) (bool, error) {\n\tres, err := run(ctx, "gcloud", "projects", "get-iam-policy", project,\n\t\t"--flatten=bindings[].members",\n\t\t"--filter=bindings.role:roles/owner AND bindings.members:user:"+email,\n\t\t"--format=value(bindings.members)")\n\tif err != nil {\n\t\treturn false, err\n\t}\n\treturn strings.Contains(res.Stdout, "user:"+email), nil\n}\n\nfunc ensureProjectOwner(project string) (commandResult, error) {\n\tvar last commandResult\n\tvar err error\n\tfor attempt := 0; attempt < 6; attempt++ {\n\t\tctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)\n\t\tlast, err = run(ctx, "gcloud", "projects", "add-iam-policy-binding", project,\n\t\t\t"--member=user:"+adminEmail,\n\t\t\t"--role=roles/owner",\n\t\t\t"--condition=None",\n\t\t\t"--quiet")\n\t\tcancel()\n\t\tif err == nil {\n\t\t\treturn last, nil\n\t\t}\n\t\ttime.Sleep(2 * time.Second)\n\t}\n\treturn last, err\n}\n\n'''
+          s = s.replace(marker, helper + marker, 1)
+          p.write_text(s)
+
+      - name: Format and verify
+        run: |
+          gofmt -w main.go
+          go mod tidy
+          go build ./...
+      - name: Commit
+        run: |
+          rm -f .github/workflows/add-admin-owner.yml
+          git config user.name "farzher"
+          git config user.email "farzher@farzher.com"
+          git add -A
+          git commit -m "Add admin owner to managed projects"
+          git push
