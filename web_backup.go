@@ -8,7 +8,7 @@ REPO=/website
 DATA="$REPO/data"
 REMOTE="$(git -C "$REPO" remote get-url origin)"
 exec 9>/run/lock/web-state.lock
-flock -n 9 || { echo 'A backup or restore is already running.' >&2; exit 1; }
+flock -n 9 || { echo 'Another deploy, backup, or restore is already running.' >&2; exit 1; }
 install -d -m 0750 "$DATA"
 if find "$DATA" -type l -print -quit | grep -q .; then
   echo 'Persistent-data symlinks are not supported; remove symlinks from /website/data before backup.' >&2
@@ -38,7 +38,6 @@ sudo -u postgres pg_dump -Fc web | split -b "$CHUNK_BYTES" -d -a 3 - "$TMP/datab
 compgen -G "$TMP/database.dump.part-*" >/dev/null || { echo 'pg_dump produced no backup data' >&2; exit 1; }
 set -- "$TMP"/database.dump.part-*
 if [ "$#" -eq 1 ]; then mv "$1" "$TMP/database.dump"; fi
-sudo -u postgres pg_dumpall --globals-only | gzip -6 >"$TMP/globals.sql.gz"
 
 DB_ENTRIES="$TMP/database.entries"
 : >"$DB_ENTRIES"
@@ -53,9 +52,6 @@ else
     rm -f "$FILE"
   done
 fi
-GLOBALS_SHA="$(git hash-object -w "$TMP/globals.sql.gz")"
-printf '100644 blob %s\tglobals.sql.gz\n' "$GLOBALS_SHA" >>"$DB_ENTRIES"
-rm -f "$TMP/globals.sql.gz"
 DATABASE_TREE="$(git mktree <"$DB_ENTRIES")"
 
 # Persistent files are separate Git blobs, not a tarball, so unchanged files
