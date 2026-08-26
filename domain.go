@@ -63,15 +63,22 @@ hermes auth status openai-codex | grep -Eqi 'logged in|authenticated'
 [ "$(hermes config get agent.reasoning_effort)" = ` + chatGPTEffort + ` ]
 [ -s /root/.hermes/SOUL.md ]
 [ -s /root/.hermes/skills/farzher-web-development/SKILL.md ]
-[ -d /srv/web/repo/.git ]
-[ -s /srv/web/repo/.hermes.md ]
-[ -x /srv/web/repo/ops/deploy.sh ]
+grep -q '^## Persistent application files$' /root/.hermes/skills/farzher-web-development/SKILL.md
+[ -d /website/.git ]
+[ -d /website/data ]
+grep -qxF 'data/' /website/.gitignore
+[ -f /var/lib/website/state-initialized ]
+[ -s /website/.hermes.md ]
+[ -x /website/ops/deploy.sh ]
+[ -x /website/ops/backup.sh ]
+[ -x /website/ops/restore.sh ]
 [ -x /usr/local/bin/backup-web ]
+[ -x /usr/local/bin/restore-web ]
 systemctl is-enabled --quiet web-backup.timer
 systemctl is-active --quiet web-backup.timer
 systemctl is-active --quiet nginx
 systemctl is-active --quiet postgresql
-SLOT="$(cat /srv/web/current-slot)"
+SLOT="$(cat /var/lib/website/current-slot)"
 pm2 describe "web-$SLOT" >/dev/null
 `
 	if domain != "" {

@@ -6,6 +6,14 @@ where git >nul 2>nul
 if not errorlevel 1 (
     git status --short --branch
     git pull --ff-only
+    if errorlevel 1 (
+        echo.
+        echo Git update failed. Fix or reset the local checkout before running cloud.
+        echo Refusing to run stale source.
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 where go >nul 2>nul

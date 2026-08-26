@@ -54,7 +54,7 @@ func remoteSSHCmd(cfg config) tea.Cmd {
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return externalDoneMsg{err} })
 }
 func remoteHermesCmd(cfg config) tea.Cmd {
-	remote := `exec sudo -n -i bash -lc 'cd /srv/web/repo 2>/dev/null || cd /root; exec hermes'`
+	remote := `exec sudo -n -i bash -lc 'cd /website 2>/dev/null || cd /root; exec hermes'`
 	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+zone, "--command="+remote, "--", "-t")
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return externalDoneMsg{err} })
 }

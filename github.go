@@ -125,7 +125,7 @@ func ensureGitHub(cfg config) (config, commandResult, error) {
 
 	remoteURL := "git@github.com:" + cfg.Repo + ".git"
 	script := `set -e
-mkdir -p /root/.ssh /srv/web
+mkdir -p /root/.ssh /var/lib/website
 chmod 700 /root/.ssh
 ssh-keyscan -H github.com >>/root/.ssh/known_hosts 2>/dev/null || true
 sort -u /root/.ssh/known_hosts -o /root/.ssh/known_hosts
@@ -137,10 +137,27 @@ Host github.com
   IdentitiesOnly yes
 SSHCFG
 chmod 600 /root/.ssh/config
-if [ ! -d /srv/web/repo/.git ]; then rm -rf /srv/web/repo; git clone ` + shellQuote(remoteURL) + ` /srv/web/repo; fi
-git -C /srv/web/repo remote set-url origin ` + shellQuote(remoteURL) + `
-git -C /srv/web/repo config user.name Hermes
-git -C /srv/web/repo config user.email ` + shellQuote(adminEmail) + `
+
+# Move the previous managed checkout in place instead of cloning a second copy.
+if [ ! -d /website/.git ] && [ -d /srv/web/repo/.git ]; then
+  if [ -e /website ] && [ -n "$(find /website -mindepth 1 -print -quit 2>/dev/null)" ]; then
+    echo '/website exists and is not the managed Git repository; refusing to overwrite it.' >&2
+    exit 1
+  fi
+  rm -rf /website
+  mv /srv/web/repo /website
+fi
+if [ ! -d /website/.git ]; then
+  if [ -e /website ] && [ -n "$(find /website -mindepth 1 -print -quit 2>/dev/null)" ]; then
+    echo '/website exists and is not a Git repository; refusing to overwrite it.' >&2
+    exit 1
+  fi
+  rm -rf /website
+  git clone ` + shellQuote(remoteURL) + ` /website
+fi
+git -C /website remote set-url origin ` + shellQuote(remoteURL) + `
+git -C /website config user.name Hermes
+git -C /website config user.email ` + shellQuote(adminEmail) + `
 `
 	remoteResult, err := runRemoteBash(cfg, 90*time.Second, script)
 	all = mergeResult(all, remoteResult)
@@ -151,9 +168,14 @@ func discoverServerRepo(cfg config) string {
 	if cfg.Project == "" {
 		return ""
 	}
+	remote := `set -e
+for DIR in /website /srv/web/repo; do
+  if [ -d "$DIR/.git" ]; then git -C "$DIR" remote get-url origin; exit 0; fi
+done
+exit 1`
 	r, err := runTimeout(30*time.Second, "gcloud", "compute", "ssh", vmName,
 		"--project="+cfg.Project, "--zone="+zone,
-		"--command=sudo -n git -C /srv/web/repo remote get-url origin", "--quiet")
+		"--command=sudo -n bash -c "+shellQuote(remote), "--quiet")
 	if err != nil {
 		return ""
 	}
