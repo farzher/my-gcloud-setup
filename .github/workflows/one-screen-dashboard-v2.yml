@@ -1,0 +1,33 @@
+name: One-screen dashboard v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/one-screen-dashboard-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.x
+      - run: python scripts/patch-one-screen.py
+      - run: |
+          gofmt -w main.go
+          go mod tidy
+          go build ./...
+      - run: |
+          rm -f .github/workflows/one-screen-dashboard.yml
+          rm -f .github/workflows/one-screen-dashboard-v2.yml
+          rm -f scripts/patch-one-screen.py
+          git config user.name farzher
+          git config user.email farzher@farzher.com
+          git add -A
+          git commit -m "Use one-screen server dashboard"
+          git push
