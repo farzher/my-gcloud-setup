@@ -96,9 +96,11 @@ The agent does not perform manual post-deploy verification. `deploy-web` itself 
 - blue: port 3001
 - green: port 3002
 
-A deployment starts the inactive slot from `/website` and waits briefly for it to answer a local HTTP request. If it does not become ready, the failed slot is removed and the live Nginx upstream is never changed.
+A deployment starts the inactive slot from `/website` and waits briefly for it to return a successful local HTTP response. HTTP errors do not count as healthy. If the process does not become ready, the failed slot is removed and the live Nginx upstream is never changed.
 
-If the process is ready, the script writes the new upstream, validates Nginx, reloads it, then removes the old PM2 slot. Any Nginx validation/reload failure restores the previous upstream and leaves the old slot live. `flock` prevents simultaneous deployments.
+If the process is ready, the script writes the new upstream, validates Nginx, reloads it, then removes the old PM2 slot. Any Nginx validation/reload failure restores the previous upstream and leaves the old slot live. Deploy, backup, and restore share one lock so state-changing operations cannot race each other.
+
+When a `package-lock.json` exists, deployment uses `npm ci`; otherwise it installs without generating a package lock on the production checkout.
 
 Node runs with `DATABASE_URL=postgresql:///web?host=/var/run/postgresql` and `DATA_DIR=/website/data`.
 
@@ -106,7 +108,7 @@ Node runs with `DATABASE_URL=postgresql:///web?host=/var/run/postgresql` and `DA
 
 `/usr/local/bin/backup-web` is a symlink to `/website/ops/backup.sh`. It snapshots both:
 
-- PostgreSQL (`pg_dump -Fc` plus PostgreSQL globals)
+- PostgreSQL database `web` (`pg_dump -Fc`)
 - `/website/data`
 
 A systemd timer runs daily around 03:15 and pushes snapshots to the private repository's `backup` branch. `/usr/local/bin/backup-web` triggers an immediate manual snapshot, and Hermes runs it when asked for a database/files/server-state backup.
@@ -122,13 +124,13 @@ Persistent files are stored as separate Git blobs rather than one giant tarball,
 
 Retained snapshot blobs stay on GitHub. The VM fetches only backup commit/tree metadata when creating a new snapshot, and temporary new-snapshot objects are removed after the push. The `backup` branch is force-rewritten as a single root commit each run so expired backup history does not accumulate.
 
-`backup-web` and `restore-web` share a lock so a manual restore cannot race the scheduled backup.
+Deploy, `backup-web`, and `restore-web` share a lock so they cannot overlap.
 
 ## Restore and rebuild
 
 `/usr/local/bin/restore-web` is a symlink to `/website/ops/restore.sh`. It restores PostgreSQL and `/website/data` together. It supports `latest` (newest daily snapshot) or an explicit retained path such as `daily/2026-08-26` or `monthly/2026-08`.
 
-The restore streams selected Git blobs directly into a temporary database and replacement data directory instead of checking out another complete copy of the backup. Only after everything validates does it swap the state. On a live server, the current PM2 slot is restarted and checked; if it does not come back, the database/files swap is rolled back.
+The restore streams selected Git blobs directly into a temporary database and replacement data directory instead of checking out another complete copy of the backup. Only after everything validates does it swap the state. On a live server, the current PM2 slot is restarted and must return a successful HTTP response; otherwise the database/files swap is rolled back.
 
 A VM rebuild is automatic:
 
@@ -142,4 +144,3 @@ new disk
 -> create a fresh backup
 -> enable the daily timer
 ```
-
