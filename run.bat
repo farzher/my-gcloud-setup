@@ -28,10 +28,10 @@ if not exist go.sum (
     )
 )
 
-go build -trimpath -ldflags="-s -w" -o cloud.exe .
+go run .
 if errorlevel 1 (
     echo.
-    echo Build failed. Refreshing dependencies and retrying...
+    echo Run failed. Refreshing dependencies and retrying...
     go mod tidy
     if errorlevel 1 (
         echo.
@@ -40,14 +40,12 @@ if errorlevel 1 (
         pause
         exit /b 1
     )
-    go build -trimpath -ldflags="-s -w" -o cloud.exe .
+    go run .
     if errorlevel 1 (
         echo.
-        echo Build failed.
+        echo Run failed.
         echo.
         pause
         exit /b 1
     )
 )
-
-cloud.exe
