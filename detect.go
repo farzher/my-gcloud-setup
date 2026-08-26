@@ -134,14 +134,15 @@ if command -v hermes >/dev/null && hermes auth status openai-codex 2>/dev/null |
 PORT=''
 [ "$SLOT" = blue ] && PORT=3001
 [ "$SLOT" = green ] && PORT=3002
-if [ -d /website/data ] && grep -qxF 'data/' /website/.gitignore && [ -x /website/ops/deploy.sh ] && [ -x /website/ops/backup.sh ] && [ -x /website/ops/restore.sh ] && [ -s /website/.hermes.md ] && [ -f /var/lib/website/initialized ] && [ -x /usr/local/bin/backup-web ] && [ -x /usr/local/bin/restore-web ] && systemctl is-enabled --quiet web-backup.timer && systemctl is-active --quiet web-backup.timer && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql && [ "$(sha256sum /website/ops/deploy.sh 2>/dev/null | awk '{print $1}')" = "` + deployHash + `" ] && [ "$(sha256sum /website/ops/backup.sh 2>/dev/null | awk '{print $1}')" = "` + backupHash + `" ] && [ "$(sha256sum /website/ops/restore.sh 2>/dev/null | awk '{print $1}')" = "` + restoreHash + `" ] && [ "$(sha256sum /website/.hermes.md 2>/dev/null | awk '{print $1}')" = "` + contextHash + `" ] && [ -n "$PORT" ] && pm2 describe "web-$SLOT" >/dev/null 2>&1 && curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"; then echo READY_WEB; fi
+if [ -d /website/data ] && grep -qxF 'data/' /website/.gitignore && [ -x /website/ops/deploy.sh ] && [ -x /website/ops/backup.sh ] && [ -x /website/ops/restore.sh ] && [ -s /website/.hermes.md ] && [ -f /var/lib/website/initialized ] && [ -x /usr/local/bin/backup-web ] && [ -x /usr/local/bin/restore-web ] && systemctl is-enabled --quiet web-backup.timer && systemctl is-active --quiet web-backup.timer && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql && [ "$(sha256sum /website/ops/deploy.sh 2>/dev/null | awk '{print $1}')" = "` + deployHash + `" ] && [ "$(sha256sum /website/ops/backup.sh 2>/dev/null | awk '{print $1}')" = "` + backupHash + `" ] && [ "$(sha256sum /website/ops/restore.sh 2>/dev/null | awk '{print $1}')" = "` + restoreHash + `" ] && [ "$(sha256sum /website/.hermes.md 2>/dev/null | awk '{print $1}')" = "` + contextHash + `" ] && [ -n "$PORT" ] && nginx -t >/dev/null 2>&1 && nginx -T 2>/dev/null | grep -Fq "server 127.0.0.1:$PORT;" && pm2 describe "web-$SLOT" >/dev/null 2>&1 && curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"; then echo READY_WEB; fi
 `
 	if domain == "" {
 		script += "echo READY_DNS\necho READY_HTTPS\n"
 	} else {
 		script += `if getent ahostsv4 ` + shellQuote(domain) + ` 2>/dev/null | awk '{print $1}' | grep -Fxq ` + shellQuote(staticIP) + `; then echo READY_DNS; fi
 `
-		script += `if [ -s /etc/letsencrypt/live/` + domain + `/fullchain.pem ]; then echo READY_HTTPS; fi
+		cert := "/etc/letsencrypt/live/" + domain + "/fullchain.pem"
+		script += `if [ -s ` + shellQuote(cert) + ` ] && nginx -T 2>/dev/null | grep -Fq ` + shellQuote("ssl_certificate "+cert) + `; then echo READY_HTTPS; fi
 `
 	}
 	return "sudo -n bash -c " + shellQuote(script)
