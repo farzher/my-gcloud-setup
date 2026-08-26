@@ -1,4 +1,3 @@
-@echo off
 setlocal
 cd /d "%~dp0"
 title Google Cloud remote login
