@@ -31,12 +31,15 @@ func detect(cfg config) (cloudState, error) {
 	if s.Account == "" {
 		return s, nil
 	}
+	cfg.Account = s.Account
+	cfg.Project = cfg.projectFor(s.Account)
+	cfg.Repo = cfg.repoFor(s.Account)
 
 	if r, err = run(ctx, "gcloud", "billing", "accounts", "list", "--filter=open=true", "--format=json"); err == nil && r.Stdout != "" {
 		_ = json.Unmarshal([]byte(r.Stdout), &s.Billing)
 	}
 
-	project := cfg.projectFor(s.Account)
+	project := cfg.Project
 	if project == "" {
 		s.ManagedProject = discoverManagedProject(ctx, s.Account)
 		project = s.ManagedProject
@@ -44,6 +47,7 @@ func detect(cfg config) (cloudState, error) {
 	if project == "" {
 		return s, nil
 	}
+	cfg.Project = project
 
 	if r, err = run(ctx, "gcloud", "projects", "describe", project, "--format=json"); err != nil {
 		return s, nil
@@ -112,13 +116,25 @@ func detect(cfg config) (cloudState, error) {
 
 func remoteProbe(cfg config, staticIP string) string {
 	domain := cfg.domainFor(cfg.Account)
+	deployHash := contentHash(buildDeployScript())
+	backupHash := contentHash(buildBackupScript())
+	restoreHash := contentHash(buildRestoreScript())
+	contextHash := contentHash(buildHermesProjectContext(cfg, domain))
 	script := `
 echo READY_SSH
 if command -v node >/dev/null && command -v psql >/dev/null && command -v pm2 >/dev/null && command -v nginx >/dev/null && swapon --show=NAME --noheadings | grep -qx /swapfile; then echo READY_SYSTEM; fi
 if command -v hermes >/dev/null && [ -s /root/.hermes/SOUL.md ] && [ -s /root/.hermes/skills/farzher-web-development/SKILL.md ]; then echo READY_HERMES; fi
 if command -v hermes >/dev/null && hermes auth status openai-codex 2>/dev/null | grep -Eqi "logged in|authenticated" && [ "$(hermes config get model.provider 2>/dev/null)" = "openai-codex" ] && [ "$(hermes config get model.default 2>/dev/null)" = "` + chatGPTModel + `" ] && [ "$(hermes config get agent.reasoning_effort 2>/dev/null)" = "` + chatGPTEffort + `" ]; then echo READY_CHATGPT; fi
-if [ -d /website/.git ] && git -C /website remote get-url origin >/dev/null 2>&1; then echo READY_GITHUB; fi
-if [ -d /website/data ] && grep -qxF 'data/' /website/.gitignore && [ -x /website/ops/deploy.sh ] && [ -x /website/ops/backup.sh ] && [ -x /website/ops/restore.sh ] && [ -s /website/.hermes.md ] && [ -f /var/lib/website/initialized ] && [ -x /usr/local/bin/backup-web ] && [ -x /usr/local/bin/restore-web ] && systemctl is-enabled --quiet web-backup.timer && systemctl is-active --quiet web-backup.timer && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql && [ -s /var/lib/website/current-slot ]; then echo READY_WEB; fi
+`
+	if cfg.Repo != "" {
+		script += `if [ -d /website/.git ] && [ "$(git -C /website remote get-url origin 2>/dev/null)" = ` + shellQuote("git@github.com:"+cfg.Repo+".git") + ` ]; then echo READY_GITHUB; fi
+`
+	}
+	script += `SLOT="$(cat /var/lib/website/current-slot 2>/dev/null || true)"
+PORT=''
+[ "$SLOT" = blue ] && PORT=3001
+[ "$SLOT" = green ] && PORT=3002
+if [ -d /website/data ] && grep -qxF 'data/' /website/.gitignore && [ -x /website/ops/deploy.sh ] && [ -x /website/ops/backup.sh ] && [ -x /website/ops/restore.sh ] && [ -s /website/.hermes.md ] && [ -f /var/lib/website/initialized ] && [ -x /usr/local/bin/backup-web ] && [ -x /usr/local/bin/restore-web ] && systemctl is-enabled --quiet web-backup.timer && systemctl is-active --quiet web-backup.timer && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql && [ "$(sha256sum /website/ops/deploy.sh 2>/dev/null | awk '{print $1}')" = "` + deployHash + `" ] && [ "$(sha256sum /website/ops/backup.sh 2>/dev/null | awk '{print $1}')" = "` + backupHash + `" ] && [ "$(sha256sum /website/ops/restore.sh 2>/dev/null | awk '{print $1}')" = "` + restoreHash + `" ] && [ "$(sha256sum /website/.hermes.md 2>/dev/null | awk '{print $1}')" = "` + contextHash + `" ] && [ -n "$PORT" ] && pm2 describe "web-$SLOT" >/dev/null 2>&1 && curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"; then echo READY_WEB; fi
 `
 	if domain == "" {
 		script += "echo READY_DNS\necho READY_HTTPS\n"
