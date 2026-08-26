@@ -10,24 +10,20 @@ Double-click `run.bat` or run:
 go run .
 ```
 
-Go 1.25+ is required. `run.bat` pulls the latest source and installs GitHub CLI with winget when possible. If Git cannot fast-forward, the launcher stops instead of running stale source.
+Requires Go 1.25+. `run.bat` fast-forwards to the latest source and installs GitHub CLI with winget when possible. If Git cannot update cleanly, it stops instead of running stale code.
 
-## First setup
+## Setup
 
-1. Pick an already-authenticated Google account, or sign in with Browser / QR.
-2. Enable/select billing.
-3. Enter a domain such as `farzher.com`, or a plain server name if no domain is needed.
-4. The Server screen provisions everything automatically.
-5. Authorize ChatGPT when the Codex device QR/code appears.
-6. Authorize GitHub CLI as `farzher` if needed.
-7. If a domain was entered, point its **A record** at the static IP shown by the DNS step and press `r` to continue.
-8. HTTPS is issued automatically with Certbot/Let's Encrypt.
+1. Pick a Google account or sign in with Browser / QR.
+2. Select billing.
+3. Enter a domain such as `farzher.com`, or a plain server name.
+4. Let the Server screen provision the machine.
+5. Authorize ChatGPT/Codex and GitHub when prompted.
+6. For a domain, point its A record at the shown static IP and retry.
 
-The TUI warns before creating anything if it can see unrelated Compute Engine VMs.
+The TUI warns before creating resources when it can see unrelated Compute Engine VMs.
 
-## Result
-
-The managed Google Cloud project contains:
+## What it creates
 
 - Debian 13 `e2-micro`
 - 30 GB `pd-standard`
@@ -35,23 +31,18 @@ The managed Google Cloud project contains:
 - TCP 22 / 80 / 443
 - 1 GB emergency swap
 - Node.js, PostgreSQL, PM2, Nginx
-- Certbot + automatic Let's Encrypt renewal when a domain is configured
-- Hermes Agent installed without browser/computer-use components or bundled skills
-- ChatGPT/Codex OAuth using `gpt-5.6-sol` with medium reasoning
-- `stephenkamenar@gmail.com` as Project Owner
+- Certbot / Let's Encrypt when a domain is configured
+- lean Hermes Agent using ChatGPT/Codex
+- one private GitHub repository with a write-enabled VM deploy key
 
-The app creates one private repository under `farzher`, generates an Ed25519 key on the VM, and registers it as a write-enabled GitHub deploy key.
-
-## One website tree
-
-The entire website working tree is simply:
+## Website layout
 
 ```text
 /website/
 ├── .git/
 ├── .gitignore
 ├── .hermes.md
-├── data/          # persistent runtime files; Git-ignored
+├── data/          # persistent, Git-ignored
 ├── ops/
 │   ├── deploy.sh
 │   ├── backup.sh
@@ -59,59 +50,33 @@ The entire website working tree is simply:
 └── ...source files
 ```
 
-`/website` is the private Git repository. `/website/data` deliberately lives inside that tree for a simple layout, but `.gitignore` contains `data/`, so uploads and generated runtime files never enter `main` or its Git history.
+Durable state is split cleanly:
 
-Node receives `DATA_DIR=/website/data`. Durable state therefore has three clear forms:
+- source and ops -> private GitHub `main`
+- structured data -> PostgreSQL database `web`
+- durable files -> `/website/data`
+- PostgreSQL + durable-file snapshots -> private GitHub `backup`
 
-- tracked source/ops code -> private GitHub `main`
-- structured application data -> PostgreSQL database `web`
-- durable files -> `/website/data` -> private GitHub `backup` snapshots
-
-Tiny operational markers such as the current blue/green slot live outside the site at `/var/lib/website`; they are disposable and recreated by provisioning.
-
-## Hermes
-
-Hermes is intentionally lean for the 1 GB VM:
-
-- `~/.hermes/SOUL.md` defines the permanent identity: Farzher's fast, low-memory web developer.
-- `/website/.hermes.md` contains permanent project/stack/deployment/state rules and instructs Hermes to load **Farzher Web Development** for every task in the repo.
-- `~/.hermes/skills/farzher-web-development/SKILL.md` contains the quick-iteration procedure and persistent-file rules.
-- `MEMORY.md` remains enabled for facts Hermes learns over time; permanent rules do not depend on mutable memory.
-- Hermes may learn additional skills, but `skills.write_approval=true` stages skill changes for approval rather than silently applying them.
-
-Hermes explicitly knows that an upload page, attachment system, generated-image feature, export feature, etc. stores file bytes under `DATA_DIR` and structured metadata in PostgreSQL when useful. It is also told never to force-add `data/` to Git or run `git clean -fdx` against `/website`.
-
-Normal development flow:
+Node receives:
 
 ```text
-edit -> commit -> push -> /usr/local/bin/deploy-web -> reply
+DATABASE_URL=postgresql:///web?host=/var/run/postgresql
+DATA_DIR=/website/data
 ```
-
-The agent does not perform manual post-deploy verification. `deploy-web` itself performs fast local readiness and Nginx checks before switching traffic.
 
 ## Deployment
 
-`/usr/local/bin/deploy-web` is a symlink to `/website/ops/deploy.sh`. It uses one checkout and two PM2 slots:
+`/usr/local/bin/deploy-web` uses blue/green PM2 slots on ports 3001 and 3002.
 
-- blue: port 3001
-- green: port 3002
+It starts the inactive slot, requires a successful local HTTP response, validates and reloads Nginx, then removes the old slot. Failed readiness or Nginx checks leave the previous slot live.
 
-A deployment starts the inactive slot from `/website` and waits briefly for it to return a successful local HTTP response. HTTP errors do not count as healthy. If the process does not become ready, the failed slot is removed and the live Nginx upstream is never changed.
+Deploy, backup, and restore share one lock so state-changing operations cannot overlap.
 
-If the process is ready, the script writes the new upstream, validates Nginx, reloads it, then removes the old PM2 slot. Any Nginx validation/reload failure restores the previous upstream and leaves the old slot live. Deploy, backup, and restore share one lock so state-changing operations cannot race each other.
+Dependencies use `npm ci` when `package-lock.json` exists. Without a lock file, deployment installs without generating one on the production checkout.
 
-When a `package-lock.json` exists, deployment uses `npm ci`; otherwise it installs without generating a package lock on the production checkout.
+## Backups
 
-Node runs with `DATABASE_URL=postgresql:///web?host=/var/run/postgresql` and `DATA_DIR=/website/data`.
-
-## Server-state backups
-
-`/usr/local/bin/backup-web` is a symlink to `/website/ops/backup.sh`. It snapshots both:
-
-- PostgreSQL database `web` (`pg_dump -Fc`)
-- `/website/data`
-
-A systemd timer runs daily around 03:15 and pushes snapshots to the private repository's `backup` branch. `/usr/local/bin/backup-web` triggers an immediate manual snapshot, and Hermes runs it when asked for a database/files/server-state backup.
+`/usr/local/bin/backup-web` snapshots PostgreSQL and `/website/data` to the repository's `backup` branch.
 
 Retention:
 
@@ -120,27 +85,16 @@ Retention:
 - 12 monthly
 - 10 yearly
 
-Persistent files are stored as separate Git blobs rather than one giant tarball, so unchanged files deduplicate naturally across snapshots. Individual database chunks or persistent files larger than about 90 MiB are split into GitHub-safe parts.
-
-Retained snapshot blobs stay on GitHub. The VM fetches only backup commit/tree metadata when creating a new snapshot, and temporary new-snapshot objects are removed after the push. The `backup` branch is force-rewritten as a single root commit each run so expired backup history does not accumulate.
-
-Deploy, `backup-web`, and `restore-web` share a lock so they cannot overlap.
+A systemd timer runs daily around 03:15. Unchanged files deduplicate as Git blobs; individual database chunks or files above roughly 90 MiB are split into GitHub-safe parts.
 
 ## Restore and rebuild
 
-`/usr/local/bin/restore-web` is a symlink to `/website/ops/restore.sh`. It restores PostgreSQL and `/website/data` together. It supports `latest` (newest daily snapshot) or an explicit retained path such as `daily/2026-08-26` or `monthly/2026-08`.
+`/usr/local/bin/restore-web` restores PostgreSQL and `/website/data` together from `latest` or an explicit retained snapshot such as `daily/2026-08-26`.
 
-The restore streams selected Git blobs directly into a temporary database and replacement data directory instead of checking out another complete copy of the backup. Only after everything validates does it swap the state. On a live server, the current PM2 slot is restarted and must return a successful HTTP response; otherwise the database/files swap is rolled back.
+Restore builds replacement state first, swaps it in only after validation, and rolls back if the live site does not return successfully.
 
-A VM rebuild is automatic:
+Before a rebuild deletes the VM disk, the app creates a fresh remote server-state backup. A new VM then reinstalls the system, clones `main`, restores the newest snapshot, deploys, and re-enables automatic backups.
 
-```text
-new disk
--> install system/Hermes
--> clone main to /website
--> install site ops scripts
--> restore newest remote PostgreSQL + /website/data snapshot
--> deploy
--> create a fresh backup
--> enable the daily timer
-```
+## Hermes
+
+Hermes works from `/website`, follows `/website/.hermes.md` plus the `farzher-web-development` skill, and is configured for the 1 GB VM. Persistent files belong under `DATA_DIR`; structured application state belongs in PostgreSQL.
