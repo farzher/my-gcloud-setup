@@ -3,6 +3,11 @@ setlocal
 cd /d "%~dp0"
 title my-gcloud-setup
 
+where git >nul 2>nul
+if not errorlevel 1 (
+    git pull --ff-only --quiet >nul 2>nul
+)
+
 where go >nul 2>nul
 if errorlevel 1 (
     echo Go was not found in PATH.
@@ -12,22 +17,37 @@ if errorlevel 1 (
     exit /b 1
 )
 
-go mod tidy
-if errorlevel 1 (
-    echo.
-    echo Dependency setup failed.
-    echo.
-    pause
-    exit /b 1
+if not exist go.sum (
+    go mod tidy
+    if errorlevel 1 (
+        echo.
+        echo Dependency setup failed.
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 go build -trimpath -ldflags="-s -w" -o cloud.exe .
 if errorlevel 1 (
     echo.
-    echo Build failed.
-    echo.
-    pause
-    exit /b 1
+    echo Build failed. Refreshing dependencies and retrying...
+    go mod tidy
+    if errorlevel 1 (
+        echo.
+        echo Dependency setup failed.
+        echo.
+        pause
+        exit /b 1
+    )
+    go build -trimpath -ldflags="-s -w" -o cloud.exe .
+    if errorlevel 1 (
+        echo.
+        echo Build failed.
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 cloud.exe
