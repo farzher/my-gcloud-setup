@@ -54,11 +54,10 @@ func detect(cfg config) (cloudState, error) {
 	}
 	var p struct {
 		ProjectID string            `json:"projectId"`
-		Name      string            `json:"name"`
 		Labels    map[string]string `json:"labels"`
 	}
 	_ = json.Unmarshal([]byte(r.Stdout), &p)
-	s.ProjectOK, s.ProjectName = p.ProjectID != "", p.Name
+	s.ProjectOK = p.ProjectID != ""
 	if s.ProjectOK {
 		if p.Labels["cloud-charm"] != "managed" || p.Labels["cloud_account"] != accountHash(s.Account) {
 			if _, labelErr := ensureProjectLabels(project, s.Account); labelErr != nil {
