@@ -84,6 +84,7 @@ const (
 
 type config struct {
 	Projects map[string]string `json:"projects,omitempty"`
+	Names    map[string]string `json:"names,omitempty"`
 
 	// Runtime-only fields. Each Google account gets one remembered managed project.
 	Account string `json:"-"`
@@ -104,6 +105,20 @@ func (c *config) setProject(account, project string) {
 	c.Projects[account] = project
 	c.Account = account
 	c.Project = project
+}
+
+func (c config) nameFor(account string) string {
+	if c.Names == nil {
+		return ""
+	}
+	return c.Names[account]
+}
+
+func (c *config) setName(account, name string) {
+	if c.Names == nil {
+		c.Names = map[string]string{}
+	}
+	c.Names[account] = name
 }
 
 type billingAccount struct {
@@ -155,6 +170,7 @@ type cloudState struct {
 	Account     string
 	Billing     []billingAccount
 	ProjectOK   bool
+	ProjectName string
 	VMExists    bool
 	Instance    instanceInfo
 	StaticIP    string
@@ -192,6 +208,10 @@ type model struct {
 	vmScanAccount string
 	vmScanBusy    bool
 	vmWarningAck  bool
+
+	projectNameInput string
+	nameEditing      bool
+	nameError        string
 
 	menu    []string
 	menuPos int
@@ -241,6 +261,11 @@ type provisionFinishedMsg struct {
 
 type browserOpenedMsg struct{ err error }
 type piFinishedMsg struct{ err error }
+type renameFinishedMsg struct {
+	cfg    config
+	output string
+	err    error
+}
 
 type commandResult struct {
 	Stdout  string
@@ -313,6 +338,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vmScanAccount = ""
 			m.vmScanBusy = false
 			m.vmWarningAck = false
+			m.projectNameInput = ""
+			m.nameEditing = false
+			m.nameError = ""
 		}
 		if m.billingID != "" && !billingListContains(msg.state.Billing, m.billingID) {
 			m.billingID = ""
@@ -346,6 +374,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.otherVMCount = msg.count
 		m.vmScanAccount = msg.account
 		return m, m.routeAfterDetect()
+
+	case renameFinishedMsg:
+		m.busy = false
+		m.lastOutput = msg.output
+		if msg.err != nil {
+			m.lastErr = msg.err
+			m.returnScreen = screenDashboard
+			m.screen = screenDetails
+			return m, nil
+		}
+		m.cfg = msg.cfg
+		m.nameEditing = false
+		m.nameError = ""
+		m.projectNameInput = ""
+		m.busy = true
+		return m, detectCmd(m.cfg)
 
 	case authFinishedMsg:
 		m.busy = true
@@ -453,6 +497,54 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	k := key.String()
 	if k == "ctrl+c" {
 		return m, tea.Quit
+	}
+
+	if m.nameEditing {
+		switch k {
+		case "enter":
+			name, err := cleanProjectName(m.projectNameInput)
+			if err != nil {
+				m.nameError = err.Error()
+				return m, nil
+			}
+			m.projectNameInput = name
+			m.nameError = ""
+			if m.cfg.Project == "" {
+				m.cfg.setName(m.state.Account, name)
+				if err := saveConfig(m.cfg); err != nil {
+					m.lastErr = err
+					m.lastOutput = err.Error()
+					m.returnScreen = screenCreate
+					m.screen = screenDetails
+					return m, nil
+				}
+				m.nameEditing = false
+				return m, m.routeAfterDetect()
+			}
+			m.busy = true
+			return m, renameProjectCmd(m.cfg, name)
+		case "esc":
+			if m.cfg.Project != "" {
+				m.nameEditing = false
+				m.nameError = ""
+				m.projectNameInput = ""
+			}
+			return m, nil
+		case "backspace":
+			runes := []rune(m.projectNameInput)
+			if len(runes) > 0 {
+				m.projectNameInput = string(runes[:len(runes)-1])
+			}
+			m.nameError = ""
+			return m, nil
+		default:
+			text := key.Key().Text
+			if text != "" && len([]rune(m.projectNameInput+text)) <= 60 {
+				m.projectNameInput += text
+				m.nameError = ""
+			}
+			return m, nil
+		}
 	}
 
 	switch m.screen {
@@ -595,6 +687,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.busy = true
 			m.statusText = "Refreshing"
 			return m, detectCmd(m.cfg)
+		case "n":
+			m.nameEditing = true
+			m.nameError = ""
+			m.projectNameInput = m.state.ProjectName
+			return m, nil
 		case "q":
 			return m, tea.Quit
 		case "enter":
@@ -664,6 +761,13 @@ func (m *model) routeAfterDetect() tea.Cmd {
 		m.billingID = m.state.Billing[0].id()
 	} else if m.billingID == "" {
 		m.screen = screenBillingPick
+		return nil
+	}
+
+	if m.cfg.Project == "" && strings.TrimSpace(m.cfg.nameFor(m.state.Account)) == "" {
+		m.screen = screenCreate
+		m.nameEditing = true
+		m.nameError = ""
 		return nil
 	}
 
@@ -1005,10 +1109,34 @@ func (m model) renderServer() string {
 	b.WriteString(m.header())
 	b.WriteString("\n\n")
 	b.WriteString(titleStyle.Render("Server"))
+	projectName := m.state.ProjectName
+	if projectName == "" {
+		projectName = m.cfg.nameFor(m.state.Account)
+	}
+	if projectName != "" && !m.nameEditing {
+		b.WriteString("  " + mutedStyle.Render(projectName))
+	}
 	if m.state.Account != "" {
-		b.WriteString("  " + mutedStyle.Render(m.state.Account))
+		b.WriteString("\n" + mutedStyle.Render(m.state.Account))
 	}
 	b.WriteString("\n\n")
+
+	if m.nameEditing {
+		label := "Project name"
+		if m.cfg.Project != "" {
+			label = "Rename"
+		}
+		b.WriteString(titleStyle.Render(label) + "\n\n")
+		b.WriteString(accentStyle.Render("› ") + m.projectNameInput + accentStyle.Render("▌") + "\n")
+		if m.nameError != "" {
+			b.WriteString("\n" + badStyle.Render(m.nameError))
+		}
+		b.WriteString("\n\n" + mutedStyle.Render("enter"))
+		if m.cfg.Project != "" {
+			b.WriteString(mutedStyle.Render("  esc"))
+		}
+		return b.String()
+	}
 
 	if m.otherVMCount > 0 {
 		label := fmt.Sprintf("⚠ %d other VM", m.otherVMCount)
@@ -1118,7 +1246,7 @@ func (m model) renderServer() string {
 		b.WriteString("\n" + spinner(m.frame) + " " + m.statusText)
 	}
 	b.WriteString("\n\n")
-	b.WriteString(mutedStyle.Render("↑/↓  enter  r  q"))
+	b.WriteString(mutedStyle.Render("↑/↓  enter  r  n  q"))
 	return b.String()
 }
 
@@ -1241,6 +1369,11 @@ func detect(cfg config) (cloudState, error) {
 		return s, nil
 	}
 	s.ProjectOK = strings.TrimSpace(res.Stdout) != ""
+
+	nameRes, nameErr := run(ctx, "gcloud", "projects", "describe", project, "--format=value(name)")
+	if nameErr == nil {
+		s.ProjectName = firstLine(nameRes.Stdout)
+	}
 
 	owner, err := projectOwner(ctx, project, adminEmail)
 	if err != nil {
@@ -1476,11 +1609,15 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 
 	var last commandResult
 	var lastErr error
+	displayName := strings.TrimSpace(cfg.nameFor(cfg.Account))
+	if displayName == "" {
+		displayName = "Cloud server"
+	}
 	for attempt := 0; attempt < 5; attempt++ {
 		id := "cloud-" + randomHex(5)
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		res, err := run(ctx, "gcloud", "projects", "create", id,
-			"--name=Cloud server", "--labels=cloud-charm=managed", "--quiet")
+			"--name="+displayName, "--labels=cloud-charm=managed", "--quiet")
 		cancel()
 		last, lastErr = res, err
 		if err == nil {
@@ -1672,6 +1809,21 @@ func verifyRemote(cfg config) (commandResult, string, error) {
 		return res, "", errors.New("Hermes version check returned no output")
 	}
 	return res, lines[1], nil
+}
+
+func renameProjectCmd(cfg config, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		res, err := run(ctx, "gcloud", "projects", "update", cfg.Project, "--name="+name, "--quiet")
+		if err == nil {
+			cfg.setName(cfg.Account, name)
+			if saveErr := saveConfig(cfg); saveErr != nil {
+				err = saveErr
+			}
+		}
+		return renameFinishedMsg{cfg: cfg, output: usefulOutput(res), err: err}
+	}
 }
 
 func lifecycleCmd(name string, cfg config, action string) tea.Cmd {
@@ -1881,6 +2033,47 @@ func shortError(err error) string {
 	return s
 }
 
+func cleanProjectName(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	var b strings.Builder
+	lastDash := false
+	for _, r := range input {
+		allowed := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '\'' || r == '"' || r == '!'
+		if r == '.' || r == '_' || r == '/' || r == '\\' || r == ':' {
+			r = '-'
+			allowed = true
+		}
+		if !allowed {
+			continue
+		}
+		if r == '-' {
+			if lastDash {
+				continue
+			}
+			lastDash = true
+		} else {
+			lastDash = false
+		}
+		b.WriteRune(r)
+	}
+	name := strings.TrimSpace(b.String())
+	runes := []rune(name)
+	if len(runes) > 30 {
+		runes = runes[:30]
+		name = strings.TrimSpace(string(runes))
+	}
+	name = strings.TrimRight(name, " -'\"!")
+	if len([]rune(name)) < 4 {
+		return "", errors.New("4–30 chars")
+	}
+	last := []rune(name)[len([]rune(name))-1]
+	if !((last >= 'a' && last <= 'z') || (last >= 'A' && last <= 'Z') || (last >= '0' && last <= '9')) {
+		return "", errors.New("end with letter/number")
+	}
+	return name, nil
+}
+
 func randomHex(n int) string {
 	b := make([]byte, (n+1)/2)
 	if _, err := rand.Read(b); err != nil {
@@ -1899,13 +2092,16 @@ func configPath() string {
 }
 
 func loadConfig() config {
-	cfg := config{Projects: map[string]string{}}
+	cfg := config{Projects: map[string]string{}, Names: map[string]string{}}
 	data, err := os.ReadFile(configPath())
 	if err == nil {
 		_ = json.Unmarshal(data, &cfg)
 	}
 	if cfg.Projects == nil {
 		cfg.Projects = map[string]string{}
+	}
+	if cfg.Names == nil {
+		cfg.Names = map[string]string{}
 	}
 	return cfg
 }

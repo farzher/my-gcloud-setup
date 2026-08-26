@@ -26,7 +26,7 @@ After provisioning, the TUI provides quick actions for Hermes, SSH, restart/star
 
 Double-click `run.bat`. It quietly pulls the latest repo changes and starts the TUI with `go run .`.
 
-For a person signing in from another device, double-click `remote-login.bat`. Google prints an authorization URL; open that URL on the other person's device or paste it into any QR-code generator. After they approve access, paste the verification code back into the terminal. The resulting `gcloud` login is then available to the TUI.
+The TUI supports normal browser sign-in or a terminal QR code for signing in from another device.
 
 ## Build
 
@@ -48,16 +48,16 @@ go build -trimpath -ldflags="-s -w" -o cloud.exe .
 
 Run `cloud`. On first launch:
 
-1. Sign in through the normal `gcloud auth login` browser flow, or use `remote-login.bat` for another-device / QR-style login.
-2. If Google Cloud billing has never been activated for the account, use the billing link shown by the TUI and return when finished.
-3. Review the fixed server shape and press **Create server**.
-4. The TUI creates the project/resources, waits for SSH, installs Hermes as root, and verifies the result.
+1. Sign in with the browser or terminal QR flow.
+2. Set up/select billing if needed.
+3. Enter a human-readable project name.
+4. The Server screen creates/resumes everything automatically, then becomes the management dashboard.
 
-Afterward, **SSH** opens a normal interactive remote shell. **Hermes** SSHes into the server and launches the root Hermes installation; if Hermes has not been configured yet, it opens `hermes setup` instead.
+Afterward, **SSH** opens a normal interactive remote shell. **Hermes** launches the root Hermes installation; if Hermes has not been configured yet, it opens `hermes setup` instead. Press `n` on the Server screen to rename the Google Cloud project display name; its permanent `cloud-...` project ID does not change.
 
 ## Local state
 
-The app stores only a small mapping of Google account → managed project in the normal OS config directory under `cloud-charm/config.json`. Google credentials remain owned by `gcloud`; Hermes credentials remain owned by Hermes.
+The app stores only a small mapping of Google account → managed project/name in the normal OS config directory under `cloud-charm/config.json`. Google credentials remain owned by `gcloud`; Hermes credentials remain owned by Hermes.
 
 ## Warning
 
