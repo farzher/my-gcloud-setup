@@ -104,8 +104,6 @@ func detect(cfg config) (cloudState, error) {
 				s.DNSReady = true
 			case "READY_HTTPS":
 				s.HTTPSReady = true
-			case "READY_ALL":
-				s.VerifyReady = true
 			}
 		}
 		domainOK := cfg.domainFor(s.Account) == "" || (s.DNSReady && s.HTTPSReady)
