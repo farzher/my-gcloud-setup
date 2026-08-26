@@ -22,6 +22,12 @@ After provisioning, the TUI provides quick actions for Hermes, SSH, restart/star
 - A Google account with an active Cloud Billing account
 - Optional: [`pi`](https://pi.dev/) for the **Fix with Pi** failure action
 
+## Run on Windows
+
+Double-click `run.bat`. It quietly pulls the latest repo changes and starts the TUI with `go run .`.
+
+For a person signing in from another device, double-click `remote-login.bat`. Google prints an authorization URL; open that URL on the other person's device or paste it into any QR-code generator. After they approve access, paste the verification code back into the terminal. The resulting `gcloud` login is then available to the TUI.
+
 ## Build
 
 ```sh
@@ -42,7 +48,7 @@ go build -trimpath -ldflags="-s -w" -o cloud.exe .
 
 Run `cloud`. On first launch:
 
-1. Sign in through the normal `gcloud auth login` browser flow.
+1. Sign in through the normal `gcloud auth login` browser flow, or use `remote-login.bat` for another-device / QR-style login.
 2. If Google Cloud billing has never been activated for the account, use the billing link shown by the TUI and return when finished.
 3. Review the fixed server shape and press **Create server**.
 4. The TUI creates the project/resources, waits for SSH, installs Hermes as root, and verifies the result.
