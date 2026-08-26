@@ -90,7 +90,6 @@ func billingHas(items []billingAccount, id string) bool {
 
 type instanceInfo struct {
 	Status            string `json:"status"`
-	MachineType       string `json:"machineType"`
 	NetworkInterfaces []struct {
 		AccessConfigs []struct {
 			NatIP string `json:"natIP"`
@@ -112,7 +111,6 @@ type cloudState struct {
 	Billing        []billingAccount
 	ManagedProject string
 	ProjectOK      bool
-	ProjectName    string
 	VMExists       bool
 	Instance       instanceInfo
 	StaticIP       string
