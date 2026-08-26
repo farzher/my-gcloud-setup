@@ -17,14 +17,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist go.sum (
-    go mod tidy
-    if errorlevel 1 (
-        echo.
-        echo Dependency setup failed.
-        echo.
-        pause
-        exit /b 1
+where gh >nul 2>nul
+if errorlevel 1 (
+    where winget >nul 2>nul
+    if not errorlevel 1 (
+        echo Installing GitHub CLI...
+        winget install --id GitHub.cli -e --silent --accept-package-agreements --accept-source-agreements
     )
 )
 
