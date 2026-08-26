@@ -1,11 +1,11 @@
-@echo off
 setlocal
 cd /d "%~dp0"
 title my-gcloud-setup
 
 where git >nul 2>nul
 if not errorlevel 1 (
-    git pull --ff-only --quiet >nul 2>nul
+    git status --short --branch
+    git pull --ff-only
 )
 
 where go >nul 2>nul
