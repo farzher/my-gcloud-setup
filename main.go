@@ -14,7 +14,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -159,6 +161,13 @@ type cloudState struct {
 	HermesReady bool
 }
 
+type existingVM struct {
+	Project string
+	Name    string
+	Zone    string
+	Status  string
+}
+
 type provisionStep struct {
 	Name   string
 	State  int // 0 pending, 1 running, 2 done, 3 failed
@@ -177,6 +186,12 @@ type model struct {
 	billingPos int
 	billingID  string
 	signInPos  int
+
+	otherVMs      []existingVM
+	otherVMCount  int
+	vmScanAccount string
+	vmScanBusy    bool
+	vmWarningAck  bool
 
 	menu    []string
 	menuPos int
@@ -200,6 +215,12 @@ type tickMsg time.Time
 type detectedMsg struct {
 	state cloudState
 	err   error
+}
+
+type vmScanMsg struct {
+	account string
+	vms     []existingVM
+	count   int
 }
 
 type authFinishedMsg struct{ err error }
@@ -287,6 +308,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if previousAccount != msg.state.Account {
 			m.billingID = ""
 			m.billingPos = 0
+			m.otherVMs = nil
+			m.otherVMCount = 0
+			m.vmScanAccount = ""
+			m.vmScanBusy = false
+			m.vmWarningAck = false
 		}
 		if m.billingID != "" && !billingListContains(msg.state.Billing, m.billingID) {
 			m.billingID = ""
@@ -297,8 +323,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfg.Account = msg.state.Account
 		m.cfg.Project = m.cfg.projectFor(msg.state.Account)
 		m.lastErr = nil
-		m.routeAfterDetect()
-		return m, nil
+
+		var cmds []tea.Cmd
+		if cmd := m.routeAfterDetect(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if m.state.Account != "" && !m.vmScanBusy && m.vmScanAccount != m.state.Account {
+			m.vmScanBusy = true
+			cmds = append(cmds, scanVMsCmd(m.state.Account, m.cfg.Project))
+		}
+		if len(cmds) == 0 {
+			return m, nil
+		}
+		return m, tea.Batch(cmds...)
+
+	case vmScanMsg:
+		m.vmScanBusy = false
+		if msg.account != m.state.Account {
+			return m, nil
+		}
+		m.otherVMs = msg.vms
+		m.otherVMCount = msg.count
+		m.vmScanAccount = msg.account
+		return m, m.routeAfterDetect()
 
 	case authFinishedMsg:
 		m.busy = true
@@ -480,7 +527,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if len(m.billing) > 0 {
 				m.billingID = m.billing[m.billingPos].id()
-				m.screen = screenCreate
+				return m, m.routeAfterDetect()
 			}
 		case "q":
 			return m, tea.Quit
@@ -489,6 +536,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screenCreate:
 		switch k {
 		case "enter":
+			if m.vmScanAccount != m.state.Account {
+				return m, nil
+			}
+			if m.otherVMCount > 0 && !m.vmWarningAck {
+				m.vmWarningAck = true
+			}
 			if m.billingID == "" && len(m.billing) == 1 {
 				m.billingID = m.billing[0].id()
 			}
@@ -583,34 +636,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) routeAfterDetect() {
+func (m *model) routeAfterDetect() tea.Cmd {
 	if !m.state.Gcloud {
 		m.screen = screenNeedGcloud
-		return
+		return nil
 	}
 	if m.state.Account == "" {
 		m.screen = screenSignIn
-		return
+		return nil
 	}
+
 	if m.cfg.Project != "" && m.state.VMExists {
+		if strings.EqualFold(m.state.Instance.Status, "RUNNING") && !m.state.HermesReady {
+			m.startProvisionFrom(6)
+			return runProvisionStepCmd(m.stepIndex, m.cfg, m.billingID)
+		}
 		m.screen = screenDashboard
 		m.syncMenu()
-		return
+		return nil
 	}
+
 	if len(m.state.Billing) == 0 {
 		m.screen = screenBilling
-		return
+		return nil
 	}
 	if len(m.state.Billing) == 1 {
 		m.billingID = m.state.Billing[0].id()
-		m.screen = screenCreate
-		return
-	}
-	if m.billingID == "" {
+	} else if m.billingID == "" {
 		m.screen = screenBillingPick
-		return
+		return nil
 	}
-	m.screen = screenCreate
+
+	// Before creating anything, finish the account-wide VM scan. Existing VMs
+	// pause automation on this same screen until Enter explicitly continues.
+	if m.vmScanAccount != m.state.Account || (m.otherVMCount > 0 && !m.vmWarningAck) {
+		m.screen = screenCreate
+		return nil
+	}
+
+	m.startProvision()
+	return runProvisionStepCmd(0, m.cfg, m.billingID)
 }
 
 func (m *model) syncMenu() {
@@ -642,6 +707,21 @@ func (m *model) startProvision() {
 		{Name: "Hermes"},
 		{Name: "Verify"},
 	}
+}
+
+func (m *model) startProvisionFrom(index int) {
+	m.startProvision()
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(m.steps) {
+		index = len(m.steps) - 1
+	}
+	for i := 0; i < index; i++ {
+		m.steps[i].State = 2
+	}
+	m.stepIndex = index
+	m.steps[index].State = 1
 }
 
 func (m model) activateMenu() (tea.Model, tea.Cmd) {
@@ -761,12 +841,8 @@ func (m model) render() string {
 			mutedStyle.Render("enter  r  q")
 	case screenBillingPick:
 		return m.renderBillingPick()
-	case screenCreate:
-		return m.renderCreate()
-	case screenProvision:
-		return m.renderProvision()
-	case screenDashboard:
-		return m.renderDashboard()
+	case screenCreate, screenProvision, screenDashboard:
+		return m.renderServer()
 	case screenConfirm:
 		return m.renderConfirm()
 	case screenDetails:
@@ -924,6 +1000,128 @@ func (m model) renderDashboard() string {
 	return b.String()
 }
 
+func (m model) renderServer() string {
+	var b strings.Builder
+	b.WriteString(m.header())
+	b.WriteString("\n\n")
+	b.WriteString(titleStyle.Render("Server"))
+	if m.state.Account != "" {
+		b.WriteString("  " + mutedStyle.Render(m.state.Account))
+	}
+	b.WriteString("\n\n")
+
+	if m.otherVMCount > 0 {
+		label := fmt.Sprintf("⚠ %d other VM", m.otherVMCount)
+		if m.otherVMCount != 1 {
+			label += "s"
+		}
+		b.WriteString(warnStyle.Render(label))
+		if len(m.otherVMs) > 0 {
+			v := m.otherVMs[0]
+			b.WriteString(mutedStyle.Render("  " + v.Project + "/" + v.Name))
+			if m.otherVMCount > 1 {
+				b.WriteString(mutedStyle.Render(fmt.Sprintf("  +%d", m.otherVMCount-1)))
+			}
+		}
+		b.WriteString("\n\n")
+	}
+
+	if m.screen == screenCreate {
+		if m.vmScanAccount != m.state.Account {
+			b.WriteString(spinner(m.frame) + " instances\n")
+		} else {
+			for _, name := range []string{"Project", "Billing", "Compute", "Network", "Static IP", "VM", "SSH", "Hermes", "Verify"} {
+				b.WriteString(mutedStyle.Render("·") + " " + name + "\n")
+			}
+		}
+		if m.otherVMCount > 0 && !m.vmWarningAck {
+			b.WriteString("\n" + mutedStyle.Render("enter continue  a account  q"))
+		}
+		return b.String()
+	}
+
+	if m.screen == screenProvision {
+		for _, step := range m.steps {
+			icon := mutedStyle.Render("·")
+			switch step.State {
+			case 1:
+				icon = accentStyle.Render(spinner(m.frame))
+			case 2:
+				icon = goodStyle.Render("✓")
+			case 3:
+				icon = badStyle.Render("✕")
+			}
+			line := fmt.Sprintf("%s %-15s", icon, step.Name)
+			if step.Detail != "" {
+				line += " " + mutedStyle.Render(step.Detail)
+			}
+			b.WriteString(line + "\n")
+		}
+		if !m.busy && m.stepIndex < len(m.steps) && m.steps[m.stepIndex].State == 3 {
+			b.WriteString("\n" + badStyle.Render(shortError(m.lastErr)) + "\n\n")
+			b.WriteString(mutedStyle.Render("r retry  d details"))
+			if hasExecutable("pi") {
+				b.WriteString(mutedStyle.Render("  p Pi"))
+			}
+		}
+		return b.String()
+	}
+
+	ip := m.state.Instance.ip()
+	if ip == "" {
+		ip = m.state.StaticIP
+	}
+	if ip == "" {
+		ip = "—"
+	}
+	status := strings.ToUpper(m.state.Instance.Status)
+	if status == "" {
+		status = "—"
+	}
+	rows := []struct {
+		name   string
+		detail string
+		done   bool
+	}{
+		{"Project", m.cfg.Project, m.cfg.Project != "" && m.state.ProjectOK},
+		{"Billing", "", true},
+		{"Compute", "", m.state.VMExists},
+		{"Network", "", m.state.VMExists},
+		{"Static IP", m.state.StaticIP, m.state.StaticIP != ""},
+		{"VM", status, m.state.VMExists},
+		{"SSH", "", m.state.HermesReady},
+		{"Hermes", "", m.state.HermesReady},
+		{"Verify", "", m.state.HermesReady},
+	}
+	for _, row := range rows {
+		icon := mutedStyle.Render("·")
+		if row.done {
+			icon = goodStyle.Render("✓")
+		}
+		line := fmt.Sprintf("%s %-15s", icon, row.name)
+		if row.detail != "" {
+			line += " " + mutedStyle.Render(row.detail)
+		}
+		b.WriteString(line + "\n")
+	}
+
+	b.WriteString("\n" + titleStyle.Render(ip) + "\n\n")
+	for i, item := range m.menu {
+		if i == m.menuPos {
+			b.WriteString(accentStyle.Render("› " + item))
+		} else {
+			b.WriteString("  " + item)
+		}
+		b.WriteString("\n")
+	}
+	if m.statusText != "" {
+		b.WriteString("\n" + spinner(m.frame) + " " + m.statusText)
+	}
+	b.WriteString("\n\n")
+	b.WriteString(mutedStyle.Render("↑/↓  enter  r  q"))
+	return b.String()
+}
+
 func (m model) renderConfirm() string {
 	var title string
 	var opts []string
@@ -1059,6 +1257,14 @@ func detect(cfg config) (cloudState, error) {
 	if err == nil && strings.TrimSpace(res.Stdout) != "" {
 		s.VMExists = true
 		_ = json.Unmarshal([]byte(res.Stdout), &s.Instance)
+		if strings.EqualFold(s.Instance.Status, "RUNNING") {
+			probeCtx, probeCancel := context.WithTimeout(context.Background(), 12*time.Second)
+			_, probeErr := run(probeCtx, "gcloud", "compute", "ssh", vmName,
+				"--project="+project, "--zone="+zone,
+				"--command=sudo -n test -x /usr/local/bin/hermes", "--quiet")
+			probeCancel()
+			s.HermesReady = probeErr == nil
+		}
 	}
 
 	res, err = run(ctx, "gcloud", "compute", "addresses", "describe", addressName,
@@ -1067,6 +1273,96 @@ func detect(cfg config) (cloudState, error) {
 		s.StaticIP = firstLine(res.Stdout)
 	}
 	return s, nil
+}
+
+func scanVMsCmd(account, managedProject string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		vms, count := scanExistingVMs(ctx, managedProject)
+		return vmScanMsg{account: account, vms: vms, count: count}
+	}
+}
+
+func scanExistingVMs(ctx context.Context, managedProject string) ([]existingVM, int) {
+	res, err := run(ctx, "gcloud", "projects", "list",
+		"--filter=lifecycleState:ACTIVE", "--format=value(projectId)")
+	if err != nil {
+		return nil, 0
+	}
+	projects := nonEmptyLines(res.Stdout)
+	if len(projects) == 0 {
+		return nil, 0
+	}
+
+	type scanResult struct{ vms []existingVM }
+	results := make(chan scanResult, len(projects))
+	sem := make(chan struct{}, 6)
+	var wg sync.WaitGroup
+	for _, project := range projects {
+		project := project
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			vmRes, err := run(ctx, "gcloud", "compute", "instances", "list",
+				"--project="+project,
+				"--format=value(name,zone.basename(),status)")
+			if err != nil {
+				return
+			}
+			var found []existingVM
+			for _, line := range nonEmptyLines(vmRes.Stdout) {
+				fields := strings.Fields(line)
+				if len(fields) == 0 {
+					continue
+				}
+				name := fields[0]
+				if project == managedProject && name == vmName {
+					continue
+				}
+				vm := existingVM{Project: project, Name: name}
+				if len(fields) > 1 {
+					vm.Zone = fields[1]
+				}
+				if len(fields) > 2 {
+					vm.Status = fields[2]
+				}
+				found = append(found, vm)
+			}
+			if len(found) > 0 {
+				select {
+				case results <- scanResult{vms: found}:
+				case <-ctx.Done():
+				}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var all []existingVM
+	for result := range results {
+		all = append(all, result.vms...)
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Project == all[j].Project {
+			return all[i].Name < all[j].Name
+		}
+		return all[i].Project < all[j].Project
+	})
+	count := len(all)
+	if len(all) > 3 {
+		all = all[:3]
+	}
+	return all, count
 }
 
 func authCmd() tea.Cmd {
