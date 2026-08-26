@@ -4,6 +4,7 @@ import (
 	"bytes"
 	tea "charm.land/bubbletea/v2"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -41,7 +42,7 @@ func ensureNetwork(cfg config) (commandResult, error) {
 }
 
 func ensureAddress(cfg config) (commandResult, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	var all commandResult
 	if !gcloudExists(ctx, "compute", "addresses", "describe", addressName, "--project="+cfg.Project, "--region="+region) {
@@ -51,9 +52,97 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 			return all, "", e
 		}
 	}
-	r, e := run(ctx, "gcloud", "compute", "addresses", "describe", addressName, "--project="+cfg.Project, "--region="+region, "--format=value(address)")
-	all = mergeResult(all, r)
-	return all, firstLine(r.Stdout), e
+
+	addressResult, err := run(ctx, "gcloud", "compute", "addresses", "describe", addressName,
+		"--project="+cfg.Project, "--region="+region, "--format=json")
+	all = mergeResult(all, addressResult)
+	if err != nil {
+		return all, "", err
+	}
+	var address struct {
+		Address string   `json:"address"`
+		Users   []string `json:"users"`
+	}
+	if err = json.Unmarshal([]byte(addressResult.Stdout), &address); err != nil {
+		return all, "", fmt.Errorf("decode static IP: %w", err)
+	}
+	ip := strings.TrimSpace(address.Address)
+	if ip == "" {
+		return all, "", errors.New("static IP is missing")
+	}
+
+	instanceResult, instanceErr := run(ctx, "gcloud", "compute", "instances", "describe", vmName,
+		"--project="+cfg.Project, "--zone="+zone, "--format=json(networkInterfaces)")
+	if instanceErr != nil {
+		if looksNotFound(usefulOutput(instanceResult)) {
+			return all, ip, nil
+		}
+		return mergeResult(all, instanceResult), ip, instanceErr
+	}
+	all = mergeResult(all, instanceResult)
+	var instance struct {
+		NetworkInterfaces []struct {
+			Name          string `json:"name"`
+			AccessConfigs []struct {
+				Name  string `json:"name"`
+				NatIP string `json:"natIP"`
+			} `json:"accessConfigs"`
+		} `json:"networkInterfaces"`
+	}
+	if err = json.Unmarshal([]byte(instanceResult.Stdout), &instance); err != nil {
+		return all, ip, fmt.Errorf("decode VM network: %w", err)
+	}
+	if len(instance.NetworkInterfaces) == 0 {
+		return all, ip, errors.New("VM has no network interface")
+	}
+
+	nic := instance.NetworkInterfaces[0]
+	nicName := nic.Name
+	if nicName == "" {
+		nicName = "nic0"
+	}
+	accessName, currentIP := "External NAT", ""
+	if len(nic.AccessConfigs) > 0 {
+		if nic.AccessConfigs[0].Name != "" {
+			accessName = nic.AccessConfigs[0].Name
+		}
+		currentIP = nic.AccessConfigs[0].NatIP
+	}
+	if currentIP == ip {
+		return all, ip, nil
+	}
+
+	for _, user := range address.Users {
+		if user != "" && !strings.HasSuffix(user, "/instances/"+vmName) {
+			return all, ip, fmt.Errorf("static IP %s is already attached to another resource", ip)
+		}
+	}
+
+	hadAccess := len(nic.AccessConfigs) > 0
+	if hadAccess {
+		removed, removeErr := run(ctx, "gcloud", "compute", "instances", "delete-access-config", vmName,
+			"--project="+cfg.Project, "--zone="+zone, "--network-interface="+nicName, "--access-config-name="+accessName, "--quiet")
+		all = mergeResult(all, removed)
+		if removeErr != nil {
+			return all, ip, removeErr
+		}
+	}
+
+	assigned, assignErr := run(ctx, "gcloud", "compute", "instances", "add-access-config", vmName,
+		"--project="+cfg.Project, "--zone="+zone, "--network-interface="+nicName, "--access-config-name="+accessName,
+		"--address="+ip, "--network-tier=PREMIUM", "--quiet")
+	all = mergeResult(all, assigned)
+	if assignErr == nil {
+		return all, ip, nil
+	}
+
+	if hadAccess {
+		fallback, _ := run(ctx, "gcloud", "compute", "instances", "add-access-config", vmName,
+			"--project="+cfg.Project, "--zone="+zone, "--network-interface="+nicName, "--access-config-name="+accessName,
+			"--network-tier=PREMIUM", "--quiet")
+		all = mergeResult(all, fallback)
+	}
+	return all, ip, fmt.Errorf("assign static IP %s: %w", ip, assignErr)
 }
 
 func ensureVM(cfg config) (commandResult, error) {
