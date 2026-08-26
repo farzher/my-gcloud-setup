@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const githubKnownHost = "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+
 func ensureChatGPT(cfg config) (commandResult, error) {
 	status, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
 		"--project="+cfg.Project, "--zone="+zone, "--command=sudo -n -i hermes auth status openai-codex", "--quiet")
@@ -127,8 +129,9 @@ func ensureGitHub(cfg config) (config, commandResult, error) {
 	script := `set -e
 mkdir -p /root/.ssh /var/lib/website
 chmod 700 /root/.ssh
-ssh-keyscan -H github.com >>/root/.ssh/known_hosts 2>/dev/null || true
-sort -u /root/.ssh/known_hosts -o /root/.ssh/known_hosts
+touch /root/.ssh/known_hosts
+ssh-keygen -R github.com -f /root/.ssh/known_hosts >/dev/null 2>&1 || true
+printf '%s\n' ` + shellQuote(githubKnownHost) + ` >>/root/.ssh/known_hosts
 cat >/root/.ssh/config <<'SSHCFG'
 Host github.com
   HostName github.com
