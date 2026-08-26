@@ -5,6 +5,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -108,9 +109,54 @@ func lifecycleCmd(name string, cfg config, action string) tea.Cmd {
 
 func rebuildCmd(cfg config, billingID string) tea.Cmd {
 	return func() tea.Msg {
-		r, e := runTimeout(4*time.Minute, "gcloud", "compute", "instances", "delete", vmName, "--project="+cfg.Project, "--zone="+zone, "--delete-disks=all", "--quiet")
-		if e != nil {
-			return actionDoneMsg{"Rebuild", cfg, usefulOutput(r), e}
+		var all commandResult
+		statusResult, err := runTimeout(30*time.Second, "gcloud", "compute", "instances", "describe", vmName,
+			"--project="+cfg.Project, "--zone="+zone, "--format=value(status)")
+		all = mergeResult(all, statusResult)
+		if err != nil {
+			if looksNotFound(usefulOutput(statusResult)) {
+				return rebuildReadyMsg{cfg, billingID}
+			}
+			return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), err}
+		}
+
+		status := strings.ToUpper(firstLine(statusResult.Stdout))
+		started := false
+		switch status {
+		case "RUNNING":
+		case "TERMINATED", "STOPPED":
+			start, startErr := runTimeout(3*time.Minute, "gcloud", "compute", "instances", "start", vmName,
+				"--project="+cfg.Project, "--zone="+zone, "--quiet")
+			all = mergeResult(all, start)
+			if startErr != nil {
+				return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), startErr}
+			}
+			started = true
+			ssh, sshErr := waitForSSH(cfg)
+			all = mergeResult(all, ssh)
+			if sshErr != nil {
+				_, _ = runTimeout(3*time.Minute, "gcloud", "compute", "instances", "stop", vmName, "--project="+cfg.Project, "--zone="+zone, "--quiet")
+				return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), fmt.Errorf("cannot back up before rebuild: %w", sshErr)}
+			}
+		default:
+			return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), fmt.Errorf("VM is %s; retry rebuild when it is running or stopped", status)}
+		}
+
+		backup, backupErr := runRemoteBash(cfg, 10*time.Minute, "/usr/local/bin/backup-web")
+		all = mergeResult(all, backup)
+		if backupErr != nil {
+			if started {
+				stop, _ := runTimeout(3*time.Minute, "gcloud", "compute", "instances", "stop", vmName, "--project="+cfg.Project, "--zone="+zone, "--quiet")
+				all = mergeResult(all, stop)
+			}
+			return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), fmt.Errorf("pre-rebuild backup failed: %w", backupErr)}
+		}
+
+		deleted, deleteErr := runTimeout(4*time.Minute, "gcloud", "compute", "instances", "delete", vmName,
+			"--project="+cfg.Project, "--zone="+zone, "--delete-disks=all", "--quiet")
+		all = mergeResult(all, deleted)
+		if deleteErr != nil {
+			return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), deleteErr}
 		}
 		return rebuildReadyMsg{cfg, billingID}
 	}
