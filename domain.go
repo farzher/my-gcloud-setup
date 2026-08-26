@@ -47,6 +47,10 @@ systemctl enable --now certbot.timer >/dev/null 2>&1 || true
 
 func verifyServer(cfg config) (commandResult, error) {
 	domain := cfg.domainFor(cfg.Account)
+	deployHash := contentHash(buildDeployScript())
+	backupHash := contentHash(buildBackupScript())
+	restoreHash := contentHash(buildRestoreScript())
+	contextHash := contentHash(buildHermesProjectContext(cfg, domain))
 	script := `set -Eeuo pipefail
 . /etc/os-release
 [ "$ID" = debian ] && [ "${VERSION_ID%%.*}" = 13 ]
@@ -65,6 +69,7 @@ hermes auth status openai-codex | grep -Eqi 'logged in|authenticated'
 [ -s /root/.hermes/skills/farzher-web-development/SKILL.md ]
 grep -q '^## Persistent application files$' /root/.hermes/skills/farzher-web-development/SKILL.md
 [ -d /website/.git ]
+[ "$(git -C /website remote get-url origin)" = ` + shellQuote("git@github.com:"+cfg.Repo+".git") + ` ]
 [ -d /website/data ]
 grep -qxF 'data/' /website/.gitignore
 [ -f /var/lib/website/initialized ]
@@ -72,14 +77,25 @@ grep -qxF 'data/' /website/.gitignore
 [ -x /website/ops/deploy.sh ]
 [ -x /website/ops/backup.sh ]
 [ -x /website/ops/restore.sh ]
+[ "$(sha256sum /website/ops/deploy.sh | awk '{print $1}')" = "` + deployHash + `" ]
+[ "$(sha256sum /website/ops/backup.sh | awk '{print $1}')" = "` + backupHash + `" ]
+[ "$(sha256sum /website/ops/restore.sh | awk '{print $1}')" = "` + restoreHash + `" ]
+[ "$(sha256sum /website/.hermes.md | awk '{print $1}')" = "` + contextHash + `" ]
 [ -x /usr/local/bin/backup-web ]
 [ -x /usr/local/bin/restore-web ]
 systemctl is-enabled --quiet web-backup.timer
 systemctl is-active --quiet web-backup.timer
 systemctl is-active --quiet nginx
 systemctl is-active --quiet postgresql
+nginx -t >/dev/null 2>&1
 SLOT="$(cat /var/lib/website/current-slot)"
+case "$SLOT" in
+  blue) PORT=3001 ;;
+  green) PORT=3002 ;;
+  *) exit 1 ;;
+esac
 pm2 describe "web-$SLOT" >/dev/null
+curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"
 `
 	if domain != "" {
 		script += `[ -s /etc/letsencrypt/live/` + domain + `/fullchain.pem ]
