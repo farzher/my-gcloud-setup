@@ -77,56 +77,84 @@ REPO="$ROOT/repo"
 REMOTE="$(git -C "$REPO" remote get-url origin)"
 TMP="$(mktemp -d /var/tmp/web-backup.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
+GIT="$TMP/git"
 
-if git ls-remote --exit-code "$REMOTE" refs/heads/backup >/dev/null 2>&1; then
-  git clone -q --depth 1 --single-branch --branch backup "$REMOTE" "$TMP/repo"
-else
-  mkdir -p "$TMP/repo"
-  git -C "$TMP/repo" init -q
-  git -C "$TMP/repo" remote add origin "$REMOTE"
+mkdir -p "$GIT"
+git -C "$GIT" init -q
+git -C "$GIT" remote add origin "$REMOTE"
+HAVE_BACKUP=0
+if git -C "$GIT" ls-remote --exit-code origin refs/heads/backup >/dev/null 2>&1; then
+  git -C "$GIT" -c protocol.version=2 fetch -q --depth=1 --filter=blob:none origin refs/heads/backup:refs/remotes/origin/backup
+  HAVE_BACKUP=1
 fi
 
-sudo -u postgres pg_dump -Fc web >"$TMP/web.dump"
+# Stream the new dump straight into GitHub-safe chunks so the VM never holds
+# both a large dump and a second split copy at the same time.
+sudo -u postgres pg_dump -Fc web | split -b 94371840 -d -a 3 - "$TMP/database.dump.part-"
+if ! compgen -G "$TMP/database.dump.part-*" >/dev/null; then
+  echo 'pg_dump produced no backup data' >&2
+  exit 1
+fi
+set -- "$TMP"/database.dump.part-*
+if [ "$#" -eq 1 ]; then
+  mv "$1" "$TMP/database.dump"
+fi
 sudo -u postgres pg_dumpall --globals-only | gzip -6 >"$TMP/globals.sql.gz"
 
-write_snapshot() {
-  DEST="$1"
-  rm -rf "$DEST"
-  mkdir -p "$DEST"
-  SIZE="$(stat -c %s "$TMP/web.dump")"
-  CHUNK_BYTES=94371840
-  if [ "$SIZE" -le "$CHUNK_BYTES" ]; then
-    cp "$TMP/web.dump" "$DEST/database.dump"
-  else
-    split -b "$CHUNK_BYTES" -d -a 3 "$TMP/web.dump" "$DEST/database.dump.part-"
+cd "$GIT"
+SNAPSHOT_ENTRIES="$TMP/snapshot.entries"
+: >"$SNAPSHOT_ENTRIES"
+if [ -f "$TMP/database.dump" ]; then
+  SHA="$(git hash-object -w "$TMP/database.dump")"
+  printf '100644 blob %s\tdatabase.dump\n' "$SHA" >>"$SNAPSHOT_ENTRIES"
+else
+  for FILE in "$TMP"/database.dump.part-*; do
+    SHA="$(git hash-object -w "$FILE")"
+    printf '100644 blob %s\t%s\n' "$SHA" "$(basename "$FILE")" >>"$SNAPSHOT_ENTRIES"
+  done
+fi
+GLOBALS_SHA="$(git hash-object -w "$TMP/globals.sql.gz")"
+printf '100644 blob %s\tglobals.sql.gz\n' "$GLOBALS_SHA" >>"$SNAPSHOT_ENTRIES"
+SNAPSHOT_TREE="$(git mktree <"$SNAPSHOT_ENTRIES")"
+
+category_tree() {
+  local CATEGORY="$1" NAME="$2" KEEP="$3"
+  local LIST="$TMP/$CATEGORY.list"
+  : >"$LIST"
+  if [ "$HAVE_BACKUP" -eq 1 ]; then
+    local OLD_TREE
+    OLD_TREE="$(git ls-tree refs/remotes/origin/backup "$CATEGORY" | awk '$2 == "tree" { print $3; exit }')"
+    if [ -n "$OLD_TREE" ]; then
+      while read -r MODE TYPE SHA ENTRY; do
+        [ "$TYPE" = tree ] || continue
+        [ "$ENTRY" = "$NAME" ] && continue
+        printf '%s\t%s\n' "$ENTRY" "$SHA" >>"$LIST"
+      done < <(git ls-tree "$OLD_TREE")
+    fi
   fi
-  cp "$TMP/globals.sql.gz" "$DEST/globals.sql.gz"
+  printf '%s\t%s\n' "$NAME" "$SNAPSHOT_TREE" >>"$LIST"
+
+  local SELECTED="$TMP/$CATEGORY.selected"
+  sort -r "$LIST" | sed -n "1,${KEEP}p" >"$SELECTED"
+  local ENTRIES="$TMP/$CATEGORY.entries"
+  : >"$ENTRIES"
+  sort "$SELECTED" | while IFS=$'\t' read -r ENTRY SHA; do
+    [ -n "$ENTRY" ] || continue
+    printf '040000 tree %s\t%s\n' "$SHA" "$ENTRY"
+  done >"$ENTRIES"
+  git mktree <"$ENTRIES"
 }
 
-cd "$TMP/repo"
-mkdir -p daily weekly monthly yearly
 DAY="$(date -u +%F)"
 WEEK="$(date -u +%G-W%V)"
 MONTH="$(date -u +%Y-%m)"
 YEAR="$(date -u +%Y)"
-write_snapshot "daily/$DAY"
-write_snapshot "weekly/$WEEK"
-write_snapshot "monthly/$MONTH"
-write_snapshot "yearly/$YEAR"
+DAILY_TREE="$(category_tree daily "$DAY" 7)"
+WEEKLY_TREE="$(category_tree weekly "$WEEK" 4)"
+MONTHLY_TREE="$(category_tree monthly "$MONTH" 12)"
+YEARLY_TREE="$(category_tree yearly "$YEAR" 10)"
 
-prune() {
-  DIR="$1" KEEP="$2"
-  find "$DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -r | tail -n +$((KEEP + 1)) | while read -r NAME; do
-    [ -n "$NAME" ] || continue
-    rm -rf "$DIR/$NAME"
-  done
-}
-prune daily 7
-prune weekly 4
-prune monthly 12
-prune yearly 10
-
-cat >README.md <<'BACKUPREADME'
+cat >"$TMP/README.md" <<'BACKUPREADME'
 # Database backups
 
 Automatic PostgreSQL snapshots for this server.
@@ -147,13 +175,21 @@ Restore a split snapshot with:
 
 Restore globals separately with ` + "`gunzip -c globals.sql.gz | psql`" + ` if needed.
 
-The branch is rewritten as a single root commit every run so Git history does not accumulate old dumps.
+The VM stores only the new snapshot temporarily. Existing retained snapshot blobs stay on GitHub; each run fetches only the backup branch's Git tree metadata. The branch is rewritten as a single root commit every run so Git history does not accumulate old dumps.
 BACKUPREADME
 
+README_SHA="$(git hash-object -w "$TMP/README.md")"
+ROOT_ENTRIES="$TMP/root.entries"
+{
+  printf '100644 blob %s\tREADME.md\n' "$README_SHA"
+  printf '040000 tree %s\tdaily\n' "$DAILY_TREE"
+  printf '040000 tree %s\tweekly\n' "$WEEKLY_TREE"
+  printf '040000 tree %s\tmonthly\n' "$MONTHLY_TREE"
+  printf '040000 tree %s\tyearly\n' "$YEARLY_TREE"
+} >"$ROOT_ENTRIES"
+TREE="$(git mktree <"$ROOT_ENTRIES")"
 git config user.name 'Cloud Backup'
 git config user.email 'backup@localhost'
-git add -A
-TREE="$(git write-tree)"
 COMMIT="$(printf 'Database backup %s\n' "$DAY" | git commit-tree "$TREE")"
 git push -q --force origin "$COMMIT:refs/heads/backup"
 `
