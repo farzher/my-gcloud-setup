@@ -37,21 +37,8 @@ if errorlevel 1 (
 go run .
 if errorlevel 1 (
     echo.
-    echo Run failed. Refreshing dependencies and retrying...
-    go mod tidy
-    if errorlevel 1 (
-        echo.
-        echo Dependency setup failed.
-        echo.
-        pause
-        exit /b 1
-    )
-    go run .
-    if errorlevel 1 (
-        echo.
-        echo Run failed.
-        echo.
-        pause
-        exit /b 1
-    )
+    echo Run failed.
+    echo.
+    pause
+    exit /b 1
 )

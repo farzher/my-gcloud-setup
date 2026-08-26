@@ -147,7 +147,7 @@ Retention:
 - 12 monthly
 - 10 yearly
 
-Each new-format snapshot contains database/ and files/. PostgreSQL uses pg_dump -Fc; persistent files are individual Git blobs so unchanged files deduplicate between snapshots. Individual database chunks or persistent files larger than about 90 MiB are split into GitHub-safe parts and transparently reconstructed by restore-web.
+Each snapshot contains database/ and files/. PostgreSQL uses pg_dump -Fc; persistent files are individual Git blobs so unchanged files deduplicate between snapshots. Individual database chunks or persistent files larger than about 90 MiB are split into GitHub-safe parts and transparently reconstructed by restore-web.
 
 The VM stores only the new snapshot temporarily. Existing retained blobs stay on GitHub; backup only fetches commit/tree metadata from the previous backup branch. The branch is rewritten as a single root commit every run so Git history does not accumulate expired snapshots.
 BACKUPREADME

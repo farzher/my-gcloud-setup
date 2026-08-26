@@ -138,15 +138,6 @@ Host github.com
 SSHCFG
 chmod 600 /root/.ssh/config
 
-# Move the previous managed checkout in place instead of cloning a second copy.
-if [ ! -d /website/.git ] && [ -d /srv/web/repo/.git ]; then
-  if [ -e /website ] && [ -n "$(find /website -mindepth 1 -print -quit 2>/dev/null)" ]; then
-    echo '/website exists and is not the managed Git repository; refusing to overwrite it.' >&2
-    exit 1
-  fi
-  rm -rf /website
-  mv /srv/web/repo /website
-fi
 if [ ! -d /website/.git ]; then
   if [ -e /website ] && [ -n "$(find /website -mindepth 1 -print -quit 2>/dev/null)" ]; then
     echo '/website exists and is not a Git repository; refusing to overwrite it.' >&2
@@ -169,10 +160,8 @@ func discoverServerRepo(cfg config) string {
 		return ""
 	}
 	remote := `set -e
-for DIR in /website /srv/web/repo; do
-  if [ -d "$DIR/.git" ]; then git -C "$DIR" remote get-url origin; exit 0; fi
-done
-exit 1`
+[ -d /website/.git ]
+git -C /website remote get-url origin`
 	r, err := runTimeout(30*time.Second, "gcloud", "compute", "ssh", vmName,
 		"--project="+cfg.Project, "--zone="+zone,
 		"--command=sudo -n bash -c "+shellQuote(remote), "--quiet")

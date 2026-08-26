@@ -67,7 +67,7 @@ grep -q '^## Persistent application files$' /root/.hermes/skills/farzher-web-dev
 [ -d /website/.git ]
 [ -d /website/data ]
 grep -qxF 'data/' /website/.gitignore
-[ -f /var/lib/website/state-initialized ]
+[ -f /var/lib/website/initialized ]
 [ -s /website/.hermes.md ]
 [ -x /website/ops/deploy.sh ]
 [ -x /website/ops/backup.sh ]

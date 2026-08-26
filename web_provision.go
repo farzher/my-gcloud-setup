@@ -7,24 +7,7 @@ DATA="$REPO/data"
 STATE=/var/lib/website
 install -d -m 0755 "$STATE"
 mkdir -p "$REPO/ops"
-
-# One-time migration from the older /srv/web layout. A running site's slot
-# marker makes it an existing server, so migration never triggers an automatic
-# restore over live state.
-for NAME in current-slot deps-hash state-initialized; do
-  if [ -e "/srv/web/$NAME" ] && [ ! -e "$STATE/$NAME" ]; then mv "/srv/web/$NAME" "$STATE/$NAME"; fi
-done
 install -d -m 0750 "$DATA"
-if [ -d /srv/web/data ] && [ -n "$(find /srv/web/data -mindepth 1 -print -quit 2>/dev/null)" ]; then
-  if [ -n "$(find "$DATA" -mindepth 1 -print -quit 2>/dev/null)" ]; then
-    echo 'Both /srv/web/data and /website/data contain files; refusing an ambiguous automatic migration.' >&2
-    exit 1
-  fi
-  rsync -a /srv/web/data/ "$DATA/"
-  rm -rf /srv/web/data
-fi
-if [ -s "$STATE/current-slot" ] && [ ! -f "$STATE/state-initialized" ]; then touch "$STATE/state-initialized"; fi
-rmdir /srv/web 2>/dev/null || true
 
 cd "$REPO"
 git checkout -B main >/dev/null 2>&1 || true
@@ -53,31 +36,9 @@ grep -qxF 'node_modules/' .gitignore || echo 'node_modules/' >> .gitignore
 grep -qxF '.env' .gitignore || echo '.env' >> .gitignore
 grep -qxF '*.log' .gitignore || echo '*.log' >> .gitignore
 grep -qxF 'data/' .gitignore || echo 'data/' >> .gitignore
-# Ignore applies only to untracked files. If an older site accidentally tracked
-# data/, remove it from the index while leaving the runtime files in place.
-git rm -r --cached -f --ignore-unmatch data >/dev/null 2>&1 || true
 
 cat >.hermes.md <<'HERMES'
 ` + hermesContext + `HERMES
-SOUL=/root/.hermes/SOUL.md
-SKILL=/root/.hermes/skills/farzher-web-development/SKILL.md
-if [ -f "$SOUL" ]; then sed -i 's#/srv/web/repo#/website#g; s#/srv/web/data#/website/data#g' "$SOUL"; fi
-if [ -f "$SKILL" ]; then sed -i 's#/srv/web/repo#/website#g; s#/srv/web/data#/website/data#g' "$SKILL"; fi
-if [ -f "$SKILL" ] && ! grep -q '^## Persistent application files$' "$SKILL"; then
-cat >>"$SKILL" <<'SKILLDATA'
-
-## Persistent application files
-- The complete website working tree is /website.
-- /website/data is the dedicated runtime-data directory and is deliberately ignored by Git as data/.
-- Node receives DATA_DIR=/website/data. Use DATA_DIR for uploads, images, avatars, attachments, generated media, exports, and other durable files.
-- Use PostgreSQL for structured/queryable application state. Do not put large file blobs in PostgreSQL solely for persistence unless the user explicitly asks.
-- Never git add -f data, remove the data/ ignore rule, put runtime uploads in tracked source directories, or run git clean -fdx against /website.
-- Do not create symlinks in DATA_DIR; the backup system rejects them.
-- /usr/local/bin/backup-web snapshots PostgreSQL and data/ together; /usr/local/bin/restore-web restores both.
-- If the user asks for an upload page or similar feature, file bytes go under DATA_DIR and metadata can go in PostgreSQL.
-SKILLDATA
-fi
-
 cat >ops/deploy.sh <<'DEPLOY'
 ` + buildDeployScript() + `DEPLOY
 cat >ops/backup.sh <<'BACKUP'
@@ -144,16 +105,11 @@ if ! git diff --cached --quiet; then
 fi
 hermes config set terminal.cwd /website >/dev/null
 
-# A brand-new disk has no state marker/current slot. Restore remote state before
-# the first deployment and before creating any new backup. Existing servers are
-# adopted through the migrated current-slot marker instead of being overwritten.
-if [ ! -f "$STATE/state-initialized" ]; then
-  if [ -s "$STATE/current-slot" ]; then
-    touch "$STATE/state-initialized"
-  else
-    /usr/local/bin/restore-web latest --no-restart
-    touch "$STATE/state-initialized"
-  fi
+# A fresh VM restores remote state before the first deployment or backup.
+# The marker prevents repeated setup on the same VM from restoring over live state.
+if [ ! -f "$STATE/initialized" ]; then
+  /usr/local/bin/restore-web latest --no-restart
+  touch "$STATE/initialized"
 fi
 /usr/local/bin/deploy-web
 /usr/local/bin/backup-web

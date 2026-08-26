@@ -39,12 +39,10 @@ esac
 TYPE="$(git cat-file -t "HEAD:$TARGET" 2>/dev/null || true)"
 [ "$TYPE" = tree ] || { echo "Snapshot not found: $TARGET" >&2; exit 1; }
 
-DB_PREFIX="$TARGET"
-FILES_PREFIX=''
-if [ "$(git cat-file -t "HEAD:$TARGET/database" 2>/dev/null || true)" = tree ]; then
-  DB_PREFIX="$TARGET/database"
-  if [ "$(git cat-file -t "HEAD:$TARGET/files" 2>/dev/null || true)" = tree ]; then FILES_PREFIX="$TARGET/files"; fi
-fi
+DB_PREFIX="$TARGET/database"
+FILES_PREFIX="$TARGET/files"
+[ "$(git cat-file -t "HEAD:$DB_PREFIX" 2>/dev/null || true)" = tree ] || { echo 'Snapshot is missing database state.' >&2; exit 1; }
+[ "$(git cat-file -t "HEAD:$FILES_PREFIX" 2>/dev/null || true)" = tree ] || { echo 'Snapshot is missing persistent-file state.' >&2; exit 1; }
 DB_TREE="$(git rev-parse "HEAD:$DB_PREFIX")"
 DB_SINGLE=0
 if git ls-tree --name-only "$DB_TREE" | grep -Fxq database.dump; then DB_SINGLE=1; fi
@@ -73,8 +71,7 @@ stream_database | sudo -u postgres pg_restore --exit-on-error -d web_restore
 # data directory. The selected snapshot is never checked out on disk, avoiding
 # a second complete copy of the persistent-file tree during restore.
 install -d -m 0750 "$DATA_NEW"
-if [ -n "$FILES_PREFIX" ]; then
-  FILES_TREE="$(git rev-parse "HEAD:$FILES_PREFIX")"
+FILES_TREE="$(git rev-parse "HEAD:$FILES_PREFIX")"
   while IFS= read -r -d '' ENTRY; do
     META="${ENTRY%%$'\t'*}"
     REL="${ENTRY#*$'\t'}"
@@ -108,7 +105,6 @@ if [ -n "$FILES_PREFIX" ]; then
       chmod "$PERM" "$DEST"
     done <"$MANIFEST"
   fi
-fi
 
 SLOT="$(cat "$STATE/current-slot" 2>/dev/null || true)"
 PORT=''

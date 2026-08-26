@@ -120,7 +120,7 @@ Retention:
 
 Persistent files are stored as separate Git blobs rather than one giant tarball, so unchanged files deduplicate naturally across snapshots. Individual database chunks or persistent files larger than about 90 MiB are split into GitHub-safe parts.
 
-Old retained blobs stay on GitHub. The VM fetches only backup commit/tree metadata when creating a new snapshot, and temporary new-snapshot objects are removed after the push. The `backup` branch is force-rewritten as a single root commit each run so expired backup history does not accumulate.
+Retained snapshot blobs stay on GitHub. The VM fetches only backup commit/tree metadata when creating a new snapshot, and temporary new-snapshot objects are removed after the push. The `backup` branch is force-rewritten as a single root commit each run so expired backup history does not accumulate.
 
 `backup-web` and `restore-web` share a lock so a manual restore cannot race the scheduled backup.
 
@@ -143,4 +143,3 @@ new disk
 -> enable the daily timer
 ```
 
-Existing managed servers using the older `/srv/web/repo` layout are migrated in place to `/website`; their current-slot marker prevents the migration from being mistaken for a fresh server restore.

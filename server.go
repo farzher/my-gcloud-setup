@@ -11,7 +11,7 @@ export NEEDRESTART_MODE=a
 
 apt-get update
 apt-get install -y --no-install-recommends \
-  ca-certificates curl git openssh-client rsync xz-utils \
+  ca-certificates curl git openssh-client xz-utils \
   nodejs npm postgresql nginx certbot python3-certbot-nginx
 
 SWAP_BYTES=1073741824
