@@ -8,15 +8,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	qrterminal "github.com/mdp/qrterminal/v3"
 )
 
 const (
@@ -172,6 +175,7 @@ type model struct {
 	billing    []billingAccount
 	billingPos int
 	billingID  string
+	signInPos  int
 
 	menu    []string
 	menuPos int
@@ -422,8 +426,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case screenSignIn:
 		switch k {
+		case "up", "k", "left", "h":
+			if m.signInPos > 0 {
+				m.signInPos--
+			}
+		case "down", "j", "right", "l", "tab":
+			if m.signInPos < 1 {
+				m.signInPos++
+			} else if k == "tab" {
+				m.signInPos = 0
+			}
+		case "1", "b":
+			m.busy = true
+			return m, authCmd()
+		case "2":
+			m.busy = true
+			return m, remoteAuthCmd()
 		case "enter":
 			m.busy = true
+			if m.signInPos == 1 {
+				return m, remoteAuthCmd()
+			}
 			return m, authCmd()
 		case "r":
 			m.busy = true
@@ -729,10 +752,7 @@ func (m model) render() string {
 			button("Open install page", true) + "\n\n" +
 			mutedStyle.Render("enter open   r retry   q quit")
 	case screenSignIn:
-		return m.header() + "\n\n" +
-			"Google Cloud isn't connected.\n\n" +
-			button("Sign in with Google", true) + "\n\n" +
-			mutedStyle.Render("gcloud handles the browser login · q quit")
+		return m.renderSignIn()
 	case screenBilling:
 		return m.header() + "\n\n" +
 			goodStyle.Render("✓ "+m.state.Account) + "\n\n" +
@@ -754,6 +774,36 @@ func (m model) render() string {
 	default:
 		return m.header()
 	}
+}
+
+func (m model) renderSignIn() string {
+	var b strings.Builder
+	b.WriteString(m.header())
+	b.WriteString("\n\n")
+	b.WriteString(titleStyle.Render("Connect Google Cloud"))
+	b.WriteString("\n")
+	b.WriteString(mutedStyle.Render("Choose how you want to sign in."))
+	b.WriteString("\n\n")
+	b.WriteString(loginChoice("Open browser", "Fastest · sign in on this computer", m.signInPos == 0))
+	b.WriteString("\n")
+	b.WriteString(loginChoice("Scan QR code", "Sign in on another phone or computer", m.signInPos == 1))
+	b.WriteString("\n\n")
+	b.WriteString(mutedStyle.Render("↑/↓ choose   enter continue   1 browser   2 QR   q quit"))
+	return b.String()
+}
+
+func loginChoice(title, detail string, active bool) string {
+	marker := "  "
+	border := muted
+	if active {
+		marker, border = "› ", accent
+	}
+	body := marker + title + "\n  " + mutedStyle.Render(detail)
+	style := lipgloss.NewStyle().Width(46).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(border)
+	if active {
+		style = style.Foreground(bright).Bold(true)
+	}
+	return style.Render(body)
 }
 
 func (m model) header() string {
@@ -1024,6 +1074,14 @@ func detect(cfg config) (cloudState, error) {
 
 func authCmd() tea.Cmd {
 	cmd := exec.Command("gcloud", "auth", "login")
+	return tea.ExecProcess(cmd, func(err error) tea.Msg { return authFinishedMsg{err: err} })
+}
+
+func remoteAuthCmd() tea.Cmd {
+	cmd := exec.Command(os.Args[0], "__remote-auth")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return authFinishedMsg{err: err} })
 }
 
@@ -1535,7 +1593,75 @@ func saveConfig(cfg config) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
+var authURLPattern = regexp.MustCompile(`https://accounts\.google\.com/[^\s]+`)
+
+type authWriter struct {
+	out   io.Writer
+	buf   string
+	shown bool
+}
+
+func (w *authWriter) Write(p []byte) (int, error) {
+	if _, err := w.out.Write(p); err != nil {
+		return 0, err
+	}
+	if w.shown {
+		return len(p), nil
+	}
+
+	w.buf += string(p)
+	if url := authURLPattern.FindString(w.buf); url != "" {
+		w.shown = true
+		renderAuthQR(w.out, url)
+	}
+
+	// Avoid retaining unlimited gcloud output before the URL appears.
+	if len(w.buf) > 64*1024 {
+		w.buf = w.buf[len(w.buf)-4096:]
+	}
+	return len(p), nil
+}
+
+func renderAuthQR(out io.Writer, url string) {
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, strings.Repeat("=", 60))
+	fmt.Fprintln(out, "Scan this QR code on the other device")
+	fmt.Fprintln(out)
+
+	qrterminal.GenerateWithConfig(url, qrterminal.Config{
+		Level:      qrterminal.M,
+		Writer:     out,
+		HalfBlocks: true,
+		QuietZone:  1,
+	})
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Direct link:")
+	fmt.Fprintln(out, url)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "After approval, paste the verification code below.")
+	fmt.Fprintln(out, strings.Repeat("=", 60))
+	fmt.Fprintln(out)
+}
+
+func runRemoteAuth() error {
+	cmd := exec.Command("gcloud", "auth", "login", "--no-launch-browser")
+	writer := &authWriter{out: os.Stdout}
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "__remote-auth" {
+		if err := runRemoteAuth(); err != nil {
+			fmt.Fprintln(os.Stderr, "remote login failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	m := initialModel()
 	if _, err := tea.NewProgram(m).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "cloud:", err)
