@@ -12,6 +12,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+go mod tidy
+if errorlevel 1 (
+    echo.
+    echo Dependency setup failed.
+    echo.
+    pause
+    exit /b 1
+)
+
 go build -trimpath -ldflags="-s -w" -o cloud.exe .
 if errorlevel 1 (
     echo.
