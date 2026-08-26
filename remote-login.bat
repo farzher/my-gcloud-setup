@@ -2,6 +2,15 @@ setlocal
 cd /d "%~dp0"
 title Google Cloud remote login
 
+where go >nul 2>nul
+if errorlevel 1 (
+    echo Go was not found in PATH.
+    echo Install Go 1.25 or newer, then run this again.
+    echo.
+    pause
+    exit /b 1
+)
+
 where gcloud >nul 2>nul
 if errorlevel 1 (
     echo gcloud was not found in PATH.
@@ -11,15 +20,23 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Google will print an authorization URL below.
-echo Open it on the other person's device, or paste it into any QR-code generator.
-echo After they approve access, paste the verification code back here.
+echo This will show Google's login URL and render it as a QR code in this terminal.
+echo After the other person approves access, paste the verification code here.
 echo.
 
-gcloud auth login --no-launch-browser
+go mod tidy
 if errorlevel 1 (
     echo.
-    echo Login failed.
+    echo Dependency setup failed.
+    echo.
+    pause
+    exit /b 1
+)
+
+go run ./cmd/remote-auth
+if errorlevel 1 (
+    echo.
+    echo Remote login failed.
     pause
     exit /b 1
 )
