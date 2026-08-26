@@ -230,7 +230,7 @@ func firstMissingStep(s cloudState, cfg config) int {
 		true,
 		true,
 		true,
-		s.StaticIP != "",
+		s.StaticIP != "" && (!s.VMExists || s.Instance.ip() == s.StaticIP),
 		s.VMExists,
 		s.SSHReady,
 		s.SystemReady,
