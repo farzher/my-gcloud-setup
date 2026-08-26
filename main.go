@@ -246,7 +246,7 @@ func initialModel() model {
 	return model{
 		screen: screenLoading,
 		cfg:    loadConfig(),
-		menu:   []string{"Hermes", "SSH", "Restart", "Stop", "Rebuild", "Destroy", "Switch Google account"},
+		menu:   []string{"Hermes", "SSH", "Restart", "Stop", "Rebuild", "Destroy", "Account"},
 	}
 }
 
@@ -617,7 +617,7 @@ func (m *model) syncMenu() {
 	if strings.EqualFold(m.state.Instance.Status, "TERMINATED") || strings.EqualFold(m.state.Instance.Status, "STOPPED") {
 		power = "Start"
 	}
-	m.menu = []string{"Hermes", "SSH", "Restart", power, "Rebuild", "Destroy", "Switch Google account"}
+	m.menu = []string{"Hermes", "SSH", "Restart", power, "Rebuild", "Destroy", "Account"}
 	if m.menuPos >= len(m.menu) {
 		m.menuPos = len(m.menu) - 1
 	}
@@ -675,7 +675,7 @@ func (m model) activateMenu() (tea.Model, tea.Cmd) {
 		m.confirm = confirmDestroy
 		m.confirmPos = 2 // default Cancel
 		return m, nil
-	case "Switch Google account":
+	case "Account":
 		m.busy = true
 		return m, authCmd()
 	}
@@ -725,7 +725,7 @@ func (m model) View() tea.View {
 		h = 24
 	}
 
-	boxWidth := 58
+	boxWidth := 50
 	if w < boxWidth+4 {
 		boxWidth = max(34, w-4)
 	}
@@ -744,21 +744,20 @@ func (m model) View() tea.View {
 func (m model) render() string {
 	switch m.screen {
 	case screenLoading:
-		return m.header() + "\n\n" + spinner(m.frame) + " Checking Google Cloud...\n"
+		return m.header() + "\n\n" + spinner(m.frame) + " gcloud"
 	case screenNeedGcloud:
 		return m.header() + "\n\n" +
-			badStyle.Render("gcloud CLI not found") + "\n\n" +
-			"Install the Google Cloud CLI, then come back here.\n\n" +
-			button("Open install page", true) + "\n\n" +
-			mutedStyle.Render("enter open   r retry   q quit")
+			badStyle.Render("gcloud not found") + "\n\n" +
+			button("Install gcloud", true) + "\n\n" +
+			mutedStyle.Render("enter  r  q")
 	case screenSignIn:
 		return m.renderSignIn()
 	case screenBilling:
 		return m.header() + "\n\n" +
 			goodStyle.Render("✓ "+m.state.Account) + "\n\n" +
-			"Google requires an active Cloud Billing account even for\nFree Tier resources. Payment details stay on Google's site.\n\n" +
-			button("Set up billing", true) + "\n\n" +
-			mutedStyle.Render("enter open   r check again   q quit")
+			titleStyle.Render("Billing") + "\n\n" +
+			button("Open billing", true) + "\n\n" +
+			mutedStyle.Render("enter  r  q")
 	case screenBillingPick:
 		return m.renderBillingPick()
 	case screenCreate:
@@ -780,30 +779,31 @@ func (m model) renderSignIn() string {
 	var b strings.Builder
 	b.WriteString(m.header())
 	b.WriteString("\n\n")
-	b.WriteString(titleStyle.Render("Connect Google Cloud"))
-	b.WriteString("\n")
-	b.WriteString(mutedStyle.Render("Choose how you want to sign in."))
+	b.WriteString(titleStyle.Render("Sign in"))
 	b.WriteString("\n\n")
-	b.WriteString(loginChoice("Open browser", "Fastest · sign in on this computer", m.signInPos == 0))
+	b.WriteString(loginChoice("Browser", m.signInPos == 0))
 	b.WriteString("\n")
-	b.WriteString(loginChoice("Scan QR code", "Sign in on another phone or computer", m.signInPos == 1))
+	b.WriteString(loginChoice("QR code", m.signInPos == 1))
 	b.WriteString("\n\n")
-	b.WriteString(mutedStyle.Render("↑/↓ choose   enter continue   1 browser   2 QR   q quit"))
+	b.WriteString(mutedStyle.Render("↑/↓  enter  q"))
 	return b.String()
 }
 
-func loginChoice(title, detail string, active bool) string {
+func loginChoice(title string, active bool) string {
 	marker := "  "
 	border := muted
 	if active {
 		marker, border = "› ", accent
 	}
-	body := marker + title + "\n  " + mutedStyle.Render(detail)
-	style := lipgloss.NewStyle().Width(46).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(border)
+	style := lipgloss.NewStyle().
+		Width(24).
+		Padding(0, 1).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border)
 	if active {
 		style = style.Foreground(bright).Bold(true)
 	}
-	return style.Render(body)
+	return style.Render(marker + title)
 }
 
 func (m model) header() string {
@@ -813,7 +813,9 @@ func (m model) header() string {
 func (m model) renderBillingPick() string {
 	var b strings.Builder
 	b.WriteString(m.header())
-	b.WriteString("\n\nChoose billing account\n\n")
+	b.WriteString("\n\n")
+	b.WriteString(titleStyle.Render("Billing"))
+	b.WriteString("\n\n")
 	for i, a := range m.billing {
 		name := a.DisplayName
 		if name == "" {
@@ -827,7 +829,7 @@ func (m model) renderBillingPick() string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(mutedStyle.Render("↑/↓ move   enter select   q quit"))
+	b.WriteString(mutedStyle.Render("↑/↓  enter  q"))
 	return b.String()
 }
 
@@ -838,27 +840,16 @@ func (m model) renderCreate() string {
 	if m.cfg.Project == "" {
 		b.WriteString(titleStyle.Render("New server"))
 	} else {
-		b.WriteString(titleStyle.Render("Resume server setup"))
+		b.WriteString(titleStyle.Render("Resume"))
 	}
 	b.WriteString("\n\n")
-	rows := [][2]string{
-		{"Machine", "e2-micro"},
-		{"OS", "Debian 13 · latest"},
-		{"Disk", "30 GB pd-standard"},
-		{"Zone", zone},
-		{"Network", "Premium"},
-		{"IPv4", "reserved static"},
-		{"Traffic", "SSH · HTTP · HTTPS"},
-		{"Ops / backups", "off"},
-		{"Hermes", "root · headless"},
-	}
-	for _, r := range rows {
-		b.WriteString(fmt.Sprintf("%-15s %s\n", mutedStyle.Render(r[0]), r[1]))
-	}
-	b.WriteString("\n")
-	b.WriteString(button("Create server", true))
+	b.WriteString("e2-micro · Debian 13\n")
+	b.WriteString("30 GB pd-standard\n")
+	b.WriteString(zone + " · Premium · static IPv4\n")
+	b.WriteString("22 · 80 · 443 · Hermes root\n\n")
+	b.WriteString(button("Create", true))
 	b.WriteString("\n\n")
-	b.WriteString(mutedStyle.Render("enter create   a switch account   q quit"))
+	b.WriteString(mutedStyle.Render("enter  a account  q"))
 	return b.String()
 }
 
@@ -866,7 +857,7 @@ func (m model) renderProvision() string {
 	var b strings.Builder
 	b.WriteString(m.header())
 	b.WriteString("\n\n")
-	b.WriteString(titleStyle.Render("Creating server"))
+	b.WriteString(titleStyle.Render("Provision"))
 	b.WriteString("\n\n")
 	for _, s := range m.steps {
 		icon := mutedStyle.Render("·")
@@ -886,13 +877,12 @@ func (m model) renderProvision() string {
 	}
 	if !m.busy && m.stepIndex < len(m.steps) && m.steps[m.stepIndex].State == 3 {
 		b.WriteString("\n")
-		b.WriteString(badStyle.Render("Setup stopped: " + shortError(m.lastErr)))
+		b.WriteString(badStyle.Render(shortError(m.lastErr)))
 		b.WriteString("\n\n")
-		b.WriteString("r retry   d details")
+		b.WriteString(mutedStyle.Render("r retry  d details"))
 		if hasExecutable("pi") {
-			b.WriteString("   p fix with Pi")
+			b.WriteString(mutedStyle.Render("  p Pi"))
 		}
-		b.WriteString("\n")
 	}
 	return b.String()
 }
@@ -914,9 +904,8 @@ func (m model) renderDashboard() string {
 	var b strings.Builder
 	b.WriteString(m.header())
 	b.WriteString("\n\n")
-	b.WriteString(fmt.Sprintf("%-28s %s\n", titleStyle.Render(vmName), statusView))
+	b.WriteString(titleStyle.Render(vmName) + "  " + statusView + "\n")
 	b.WriteString(titleStyle.Render(ip) + "\n")
-	b.WriteString(mutedStyle.Render("e2-micro · Debian 13 · "+zone) + "\n")
 	b.WriteString(mutedStyle.Render(m.state.Account) + "\n\n")
 	for i, item := range m.menu {
 		if i == m.menuPos {
@@ -927,30 +916,27 @@ func (m model) renderDashboard() string {
 		b.WriteString("\n")
 	}
 	if m.statusText != "" {
-		b.WriteString("\n" + spinner(m.frame) + " " + m.statusText + "...")
+		b.WriteString("\n" + spinner(m.frame) + " " + m.statusText)
 	}
 	b.WriteString("\n\n")
-	b.WriteString(mutedStyle.Render("↑/↓ move   enter select   r refresh   q quit"))
+	b.WriteString(mutedStyle.Render("↑/↓  enter  r  q"))
 	return b.String()
 }
 
 func (m model) renderConfirm() string {
-	var title, body string
+	var title string
 	var opts []string
 	switch m.confirm {
 	case confirmRebuild:
-		title = "Rebuild server?"
-		body = "The VM filesystem will be deleted and recreated.\nThe reserved static IP is preserved."
-		opts = []string{"Rebuild", "Cancel"}
+		title = "Rebuild?"
+		opts = []string{"Rebuild · keep IP", "Cancel"}
 	case confirmDestroy:
-		title = "Destroy server?"
-		body = "This permanently deletes the VM filesystem."
-		opts = []string{"Destroy VM · keep IP", "Destroy VM + release IP", "Cancel"}
+		title = "Destroy?"
+		opts = []string{"VM · keep IP", "VM + IP", "Cancel"}
 	}
 	var b strings.Builder
 	b.WriteString(m.header() + "\n\n")
 	b.WriteString(badStyle.Render(title) + "\n\n")
-	b.WriteString(body + "\n\n")
 	for i, opt := range opts {
 		if i == m.confirmPos {
 			b.WriteString(accentStyle.Render("› " + opt))
@@ -959,7 +945,7 @@ func (m model) renderConfirm() string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("\n" + mutedStyle.Render("↑/↓ move   enter select   esc cancel"))
+	b.WriteString("\n" + mutedStyle.Render("↑/↓  enter  esc"))
 	return b.String()
 }
 
@@ -969,7 +955,7 @@ func (m model) renderDetails() string {
 		text = m.lastErr.Error()
 	}
 	if text == "" {
-		text = "No additional output."
+		text = "—"
 	}
 	lines := strings.Split(text, "\n")
 	if len(lines) > 14 {
@@ -992,9 +978,9 @@ func (m model) renderDetails() string {
 	}
 	b.WriteString(strings.Join(lines, "\n"))
 	b.WriteString("\n\n")
-	b.WriteString(mutedStyle.Render("enter/esc back"))
+	b.WriteString(mutedStyle.Render("enter/esc"))
 	if hasExecutable("pi") && m.lastErr != nil {
-		b.WriteString(mutedStyle.Render("   p fix with Pi"))
+		b.WriteString(mutedStyle.Render("  p Pi"))
 	}
 	return b.String()
 }
@@ -1624,23 +1610,14 @@ func (w *authWriter) Write(p []byte) (int, error) {
 
 func renderAuthQR(out io.Writer, url string) {
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, strings.Repeat("=", 60))
-	fmt.Fprintln(out, "Scan this QR code on the other device")
-	fmt.Fprintln(out)
-
 	qrterminal.GenerateWithConfig(url, qrterminal.Config{
 		Level:      qrterminal.M,
 		Writer:     out,
 		HalfBlocks: true,
 		QuietZone:  1,
 	})
-
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Direct link:")
 	fmt.Fprintln(out, url)
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "After approval, paste the verification code below.")
-	fmt.Fprintln(out, strings.Repeat("=", 60))
 	fmt.Fprintln(out)
 }
 
