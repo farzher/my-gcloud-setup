@@ -153,13 +153,7 @@ rollback_state() {
   restart_web
 }
 check_ready() {
-  local CODE
-  CODE="$(curl -sS -o /dev/null --max-time 1 -w '%{http_code}' http://127.0.0.1:3000/healthz 2>/dev/null || true)"
-  case "$CODE" in
-    2??) ;;
-    404) curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:3000/ || return 1 ;;
-    *) return 1 ;;
-  esac
+  curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:3000/healthz || return 1
   psql -d web -tAc 'SELECT 1' 2>/dev/null | grep -qx 1
 }
 restore_hermes() {
