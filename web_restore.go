@@ -116,7 +116,7 @@ if [ "$(git cat-file -t "HEAD:$HERMES_PREFIX" 2>/dev/null || true)" = tree ]; th
     META="${ENTRY%%$'\t'*}"
     REL="${ENTRY#*$'\t'}"
     case "$REL" in ''|/*|..|../*|*/..|*/../*) echo "Unsafe Hermes backup path: $REL" >&2; exit 1;; esac
-    case "$REL" in SOUL.md|memories/MEMORY.md|memories/USER.md|project/.hermes.md|skills/*) ;;
+    case "$REL" in SOUL.md|memories/MEMORY.md|memories/USER.md|project/AGENTS.md|skills/*) ;;
       *) continue;;
     esac
     MODE="${META%% *}"
@@ -182,8 +182,8 @@ restore_hermes() {
   if [ -d /root/.hermes/skills ]; then mv /root/.hermes/skills "$SKILLS_OLD"; fi
   mv "$SKILLS_NEW" /root/.hermes/skills
   rm -rf "$SKILLS_OLD"
-  if [ -f "$HERMES_NEW/project/.hermes.md" ] && ! cmp -s "$HERMES_NEW/project/.hermes.md" "$APP/.hermes.md"; then
-    echo 'Backup contains a different .hermes.md; current managed project rules were kept.'
+  if [ -f "$HERMES_NEW/project/AGENTS.md" ] && ! cmp -s "$HERMES_NEW/project/AGENTS.md" "$APP/AGENTS.md"; then
+    echo 'Backup contains a different AGENTS.md; current managed project rules were kept.'
   fi
 }
 
