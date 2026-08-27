@@ -89,6 +89,11 @@ hermes config set agent.disabled_toolsets '["browser","computer_use","code_execu
 hermes config set agent.tool_use_enforcement true >/dev/null
 hermes config set tool_output.max_bytes 30000 >/dev/null
 hermes config set tool_output.max_lines 800 >/dev/null
+hermes config set approvals.mode off >/dev/null
+hermes config set approvals.cron_mode approve >/dev/null
+hermes config set approvals.single_query_mode approve >/dev/null
+hermes config set approvals.mcp_reload_confirm false >/dev/null
+hermes config set approvals.destructive_slash_confirm false >/dev/null
 hermes config set skills.write_approval false >/dev/null
 hermes config set memory.memory_enabled true >/dev/null
 hermes config set memory.user_profile_enabled true >/dev/null
