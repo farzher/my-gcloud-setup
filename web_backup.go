@@ -107,7 +107,7 @@ add_hermes_file() {
 add_hermes_file /root/.hermes/SOUL.md SOUL.md
 add_hermes_file /root/.hermes/memories/MEMORY.md memories/MEMORY.md
 add_hermes_file /root/.hermes/memories/USER.md memories/USER.md
-add_hermes_file "$APP/.hermes.md" project/.hermes.md
+add_hermes_file "$APP/AGENTS.md" project/AGENTS.md
 if [ -d /root/.hermes/skills ]; then
   while IFS= read -r -d '' FILE; do
     add_hermes_file "$FILE" "skills/${FILE#/root/.hermes/skills/}"
@@ -172,7 +172,7 @@ Retention:
 
 Each snapshot contains database/, files/, and hermes/. PostgreSQL uses pg_dump -Fc; persistent files are individual Git blobs so unchanged files deduplicate between snapshots. Individual database chunks or persistent files larger than about 90 MiB are split into GitHub-safe parts and transparently reconstructed by restore-web.
 
-Hermes snapshots include MEMORY.md, USER.md, learned skills, SOUL.md, and a recovery copy of /website/app/.hermes.md. Chat/session history (state.db), credentials, config.yaml, and .env are intentionally excluded. restore-web restores memories, learned skills, and SOUL.md; the current managed .hermes.md remains authoritative so an old backup cannot silently replace newer project rules.
+Hermes snapshots include MEMORY.md, USER.md, learned skills, SOUL.md, and a recovery copy of /website/app/AGENTS.md. Chat/session history (state.db), credentials, config.yaml, and .env are intentionally excluded. restore-web restores memories, learned skills, and SOUL.md; the current managed AGENTS.md remains authoritative so an old backup cannot silently replace newer project rules.
 
 The VM stores only the new snapshot temporarily. Existing retained blobs stay on GitHub; backup only fetches commit/tree metadata from the previous backup branch. The branch is rewritten as a single root commit every run so Git history does not accumulate expired snapshots.
 BACKUPREADME
