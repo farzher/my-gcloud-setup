@@ -39,9 +39,10 @@ func buildHermesProjectContext(cfg config, domain string) string {
 - Keep commands serial and lightweight. Do not use browsers, computer-use, subagents, containers, or heavyweight tooling unless explicitly requested.
 - Do not add or run tests, linters, type checks, benchmarks, or manual health checks unless explicitly requested; deploy-web performs the deployment health check.
 - Put durable file bytes in DATA_DIR and structured/queryable state in PostgreSQL. Never put runtime data in the app repository.
-- After code changes, run ship-web "<short commit message>", then reply when it returns.
+- After code changes, run ship-web "<short commit message>", then reply when it succeeds.
+- If ship-web or deploy-web fails because of the code or dependencies you changed, diagnose the failure, fix it, and retry. Do not stop at the first self-caused failure.
+- If the failure is external or infrastructural (for example auth, permissions, disk, database service, network, or an operation lock), or cannot be safely fixed from the requested change, report it instead of making unrelated server changes.
 - Backups are automatic. Run backup-web when explicitly asked for a snapshot; restore only when explicitly asked.
-- If a required command fails, report the failure instead of claiming success.
 - These permanent rules override MEMORY.md and are changed only when the user explicitly asks.
 `
 	return context
