@@ -245,6 +245,10 @@ func rebuildCmd(cfg config, billingID string) tea.Cmd {
 			"--project="+cfg.Project, "--zone="+zone, "--delete-disks=all", "--quiet")
 		all = mergeResult(all, deleted)
 		if deleteErr != nil {
+			if started {
+				stop, _ := runTimeout(3*time.Minute, "gcloud", "compute", "instances", "stop", vmName, "--project="+cfg.Project, "--zone="+zone, "--quiet")
+				all = mergeResult(all, stop)
+			}
 			return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), deleteErr}
 		}
 		return rebuildReadyMsg{cfg, billingID}
