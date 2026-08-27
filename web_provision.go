@@ -52,7 +52,6 @@ sed -i '/^data\/$/d; /^\.env$/d' .gitignore
 grep -qxF 'node_modules/' .gitignore || echo 'node_modules/' >> .gitignore
 grep -qxF '*.log' .gitignore || echo '*.log' >> .gitignore
 
-rm -f .hermes.md
 cat >AGENTS.md <<'AGENTS'
 ` + hermesContext + `AGENTS
 cat >ops/deploy.sh <<'DEPLOY'
