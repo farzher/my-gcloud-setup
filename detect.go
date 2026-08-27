@@ -113,6 +113,7 @@ func detect(cfg config) (cloudState, error) {
 
 func remoteProbe(cfg config, staticIP string) string {
 	domain := cfg.domainFor(cfg.Account)
+	hermesHash := hermesManagedHash()
 	deployHash := contentHash(buildDeployScript())
 	backupHash := contentHash(buildBackupScript())
 	restoreHash := contentHash(buildRestoreScript())
@@ -120,7 +121,7 @@ func remoteProbe(cfg config, staticIP string) string {
 	script := `
 echo READY_SSH
 if command -v node >/dev/null && command -v psql >/dev/null && command -v pm2 >/dev/null && command -v nginx >/dev/null && swapon --show=NAME --noheadings | grep -qx /swapfile; then echo READY_SYSTEM; fi
-if command -v hermes >/dev/null && [ -s /root/.hermes/SOUL.md ] && [ -s /root/.hermes/skills/farzher-web-development/SKILL.md ]; then echo READY_HERMES; fi
+if command -v hermes >/dev/null && [ -s /root/.hermes/SOUL.md ] && [ -s /root/.hermes/skills/farzher-web-development/SKILL.md ] && [ "$(cat ` + shellQuote(hermesManagedHashFile) + ` 2>/dev/null)" = "` + hermesHash + `" ]; then echo READY_HERMES; fi
 if command -v hermes >/dev/null && hermes auth status openai-codex 2>/dev/null | grep -Eqi "logged in|authenticated" && [ "$(hermes config get model.provider 2>/dev/null)" = "openai-codex" ] && [ "$(hermes config get model.default 2>/dev/null)" = "` + chatGPTModel + `" ] && [ "$(hermes config get agent.reasoning_effort 2>/dev/null)" = "` + chatGPTEffort + `" ]; then echo READY_CHATGPT; fi
 `
 	if cfg.Repo != "" {

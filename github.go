@@ -9,26 +9,6 @@ import (
 
 const githubKnownHost = "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
 
-func ensureChatGPT(cfg config) (commandResult, error) {
-	status, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+zone, "--command=sudo -n -i hermes auth status openai-codex", "--quiet")
-	if err != nil || !chatGPTLoggedIn(usefulOutput(status)) {
-		return status, errChatGPTAuthRequired
-	}
-	remote := `sudo -n -i bash -lc 'set -e; hermes config set model.provider openai-codex >/dev/null; hermes config set model.default ` + chatGPTModel + ` >/dev/null; hermes config set agent.reasoning_effort ` + chatGPTEffort + ` >/dev/null; hermes config unset model.base_url >/dev/null 2>&1 || true'`
-	configured, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+zone, "--command="+remote, "--quiet")
-	return mergeResult(status, configured), err
-}
-
-func chatGPTLoggedIn(output string) bool {
-	x := strings.ToLower(output)
-	if strings.Contains(x, "not logged") || strings.Contains(x, "not authenticated") || strings.Contains(x, "missing") {
-		return false
-	}
-	return strings.Contains(x, "logged in") || strings.Contains(x, "authenticated")
-}
-
 type deployKey struct {
 	ID       int64  `json:"id"`
 	Title    string `json:"title"`

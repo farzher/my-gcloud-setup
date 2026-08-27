@@ -1,10 +1,19 @@
 package main
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // This file is the single source of truth for all non-default Hermes setup.
-// Edit the config below to change SOUL.md, /website/.hermes.md, the permanent
-// Farzher Web Development skill, or any Hermes settings installed on the VM.
+// Edit it to change the model, Hermes settings, SOUL.md, /website/.hermes.md,
+// or the permanent Farzher Web Development skill.
+
+const (
+	chatGPTModel          = "gpt-5.6-sol"
+	chatGPTEffort         = "medium"
+	hermesManagedHashFile = "/root/.hermes/.managed-config-hash"
+)
 
 const hermesSoul = `You are Farzher's web developer on a tiny production server.
 Be direct, fast, practical, and concise. Prefer the smallest straightforward implementation.
@@ -109,7 +118,7 @@ You are the web developer for this repository. At the start of every user task i
 	return context
 }
 
-func buildHermesInstallScript() string {
+func buildHermesInstallScriptBody() string {
 	return `#!/bin/bash
 set -Eeuo pipefail
 export PATH="/root/.local/bin:/usr/local/bin:$PATH"
@@ -142,6 +151,34 @@ hermes --version
 `
 }
 
+func hermesManagedHash() string {
+	return contentHash(buildHermesInstallScriptBody())
+}
+
+func buildHermesInstallScript() string {
+	return buildHermesInstallScriptBody() + "printf '%s\\n' " + shellQuote(hermesManagedHash()) + " >" + shellQuote(hermesManagedHashFile) + "\n"
+}
+
 func installHermes(cfg config) (commandResult, error) {
 	return runRemoteScript(cfg, 15*time.Minute, buildHermesInstallScript())
+}
+
+func ensureChatGPT(cfg config) (commandResult, error) {
+	status, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
+		"--project="+cfg.Project, "--zone="+zone, "--command=sudo -n -i hermes auth status openai-codex", "--quiet")
+	if err != nil || !chatGPTLoggedIn(usefulOutput(status)) {
+		return status, errChatGPTAuthRequired
+	}
+	remote := `sudo -n -i bash -lc 'set -e; hermes config set model.provider openai-codex >/dev/null; hermes config set model.default ` + chatGPTModel + ` >/dev/null; hermes config set agent.reasoning_effort ` + chatGPTEffort + ` >/dev/null; hermes config unset model.base_url >/dev/null 2>&1 || true'`
+	configured, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
+		"--project="+cfg.Project, "--zone="+zone, "--command="+remote, "--quiet")
+	return mergeResult(status, configured), err
+}
+
+func chatGPTLoggedIn(output string) bool {
+	x := strings.ToLower(output)
+	if strings.Contains(x, "not logged") || strings.Contains(x, "not authenticated") || strings.Contains(x, "missing") {
+		return false
+	}
+	return strings.Contains(x, "logged in") || strings.Contains(x, "authenticated")
 }

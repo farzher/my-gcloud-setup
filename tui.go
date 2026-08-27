@@ -20,9 +20,6 @@ const (
 	adminEmail  = "stephenkamenar@gmail.com"
 	githubOwner = "farzher"
 
-	chatGPTModel  = "gpt-5.6-sol"
-	chatGPTEffort = "medium"
-
 	billingURL = "https://console.cloud.google.com/billing/create"
 	gcloudURL  = "https://cloud.google.com/sdk/docs/install"
 )
