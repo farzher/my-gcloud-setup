@@ -90,13 +90,15 @@ systemctl restart postgresql
 su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='root'\"" | grep -q 1 || su - postgres -c "createuser root"
 su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='web'\"" | grep -q 1 || su - postgres -c "createdb -O root web"
 
-mkdir -p /etc/systemd/system/hermes-gateway.service.d
-cat >/etc/systemd/system/hermes-gateway.service.d/limits.conf <<'LIMITS'
+# Hermes installs the Linux gateway as a systemd user service for root.
+# Pre-create its drop-in so a later gateway setup picks up the VM limits.
+mkdir -p /root/.config/systemd/user/hermes-gateway.service.d
+cat >/root/.config/systemd/user/hermes-gateway.service.d/limits.conf <<'LIMITS'
 [Service]
 MemoryHigh=360M
 MemoryMax=480M
 LIMITS
-systemctl daemon-reload
+
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 `
