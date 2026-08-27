@@ -24,8 +24,9 @@ func buildHermesProjectContext(cfg config, domain string) string {
 - App repository: /website/app (` + cfg.Repo + `)
 - Persistent files: /website/data via DATA_DIR
 - Structured state: PostgreSQL database web
-- Runtime: Node.js + PM2 + Nginx on a 1 GB VM
-- Deploy: /usr/local/bin/deploy-web
+- Runtime: Node.js + systemd + Nginx on a 1 GB VM
+- Ship changes: /usr/local/bin/ship-web
+- Deploy current checkout: /usr/local/bin/deploy-web
 - Backup: /usr/local/bin/backup-web
 - Restore: /usr/local/bin/restore-web
 `
@@ -36,9 +37,9 @@ func buildHermesProjectContext(cfg config, domain string) string {
 ## Rules
 - Implement requested changes directly and minimally; do not refactor unrelated code.
 - Keep commands serial and lightweight. Do not use browsers, computer-use, subagents, containers, or heavyweight tooling unless explicitly requested.
-- Do not add or run tests, linters, type checks, benchmarks, or manual health checks unless explicitly requested; deploy-web owns deployment validation and rollback.
+- Do not add or run tests, linters, type checks, benchmarks, or manual health checks unless explicitly requested; deploy-web performs the deployment health check.
 - Put durable file bytes in DATA_DIR and structured/queryable state in PostgreSQL. Never put runtime data in the app repository.
-- After every code change: git add -A, commit, push, run deploy-web, then reply when it returns.
+- After code changes, run ship-web "<short commit message>", then reply when it returns.
 - Backups are automatic. Run backup-web when explicitly asked for a snapshot; restore only when explicitly asked.
 - If a required command fails, report the failure instead of claiming success.
 - These permanent rules override MEMORY.md and are changed only when the user explicitly asks.

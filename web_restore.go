@@ -14,8 +14,8 @@ if [ "${2:-}" = '--no-restart' ]; then NO_RESTART=1; fi
 exec 9>/run/lock/web-state.lock
 flock -n 9 || { echo 'Another deploy, backup, or restore is already running.' >&2; exit 1; }
 install -d -m 0755 "$STATE"
-if [ "$NO_RESTART" -eq 1 ] && [ -s "$STATE/current-slot" ]; then
-  echo '--no-restart is only valid before the first deployment.' >&2
+if [ "$NO_RESTART" -eq 1 ] && systemctl is-active --quiet web; then
+  echo '--no-restart is only valid while the web service is stopped.' >&2
   exit 1
 fi
 if ! git ls-remote --exit-code "$REMOTE" refs/heads/backup >/dev/null 2>&1; then
@@ -65,15 +65,10 @@ stream_database() {
 }
 stream_database | pg_restore -l >/dev/null
 
-# Restore into a temporary database first. The live database is untouched until
-# the full archive has restored successfully.
 sudo -u postgres dropdb --if-exists web_restore
 sudo -u postgres createdb -O root web_restore
 stream_database | sudo -u postgres pg_restore --exit-on-error -d web_restore
 
-# Materialize persistent files directly from Git objects into the replacement
-# data directory. The selected snapshot is never checked out on disk, avoiding
-# a second complete copy of the persistent-file tree during restore.
 install -d -m 0750 "$DATA_NEW"
 FILES_TREE="$(git rev-parse "HEAD:$FILES_PREFIX")"
 while IFS= read -r -d '' ENTRY; do
@@ -110,13 +105,8 @@ if git cat-file -e "HEAD:$MANIFEST_PATH" 2>/dev/null; then
   done <"$MANIFEST"
 fi
 
-SLOT="$(cat "$STATE/current-slot" 2>/dev/null || true)"
-PORT=''
-[ "$SLOT" = blue ] && PORT=3001
-[ "$SLOT" = green ] && PORT=3002
-restart_old_slot() {
-  if [ -n "$SLOT" ]; then pm2 restart "web-$SLOT" >/dev/null 2>&1 || true; fi
-}
+RESTART=0
+if [ "$NO_RESTART" -eq 0 ] && [ -f "$STATE/initialized" ]; then RESTART=1; fi
 rollback_database() {
   sudo -u postgres psql postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('web','web_before_restore') AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
   sudo -u postgres dropdb --if-exists web_failed >/dev/null 2>&1 || true
@@ -128,44 +118,47 @@ rollback_database() {
     sudo -u postgres dropdb --if-exists web_failed >/dev/null 2>&1 || true
   fi
 }
+restart_web() {
+  if [ "$RESTART" -eq 1 ]; then systemctl restart web >/dev/null 2>&1 || true; fi
+}
 rollback_state() {
-  if [ -n "$SLOT" ]; then pm2 stop "web-$SLOT" >/dev/null 2>&1 || true; fi
+  if [ "$RESTART" -eq 1 ]; then systemctl stop web >/dev/null 2>&1 || true; fi
   rollback_database
   rm -rf "$DATA"
   if [ -d "$DATA_OLD" ]; then mv "$DATA_OLD" "$DATA"; else install -d -m 0750 "$DATA"; fi
-  restart_old_slot
+  restart_web
 }
 
-if [ -n "$SLOT" ]; then pm2 stop "web-$SLOT" >/dev/null 2>&1 || true; fi
+if [ "$RESTART" -eq 1 ]; then systemctl stop web; fi
 sudo -u postgres psql postgres -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('web','web_restore','web_before_restore') AND pid <> pg_backend_pid();" >/dev/null
 sudo -u postgres dropdb --if-exists web_before_restore
 sudo -u postgres psql postgres -v ON_ERROR_STOP=1 -c 'ALTER DATABASE web RENAME TO web_before_restore;'
 if ! sudo -u postgres psql postgres -v ON_ERROR_STOP=1 -c 'ALTER DATABASE web_restore RENAME TO web;'; then
   rollback_database
-  restart_old_slot
+  restart_web
   echo 'Restore rolled back because the restored database could not be activated.' >&2
   exit 1
 fi
 rm -rf "$DATA_OLD"
 if [ -d "$DATA" ] && ! mv "$DATA" "$DATA_OLD"; then
   rollback_database
-  restart_old_slot
+  restart_web
   echo 'Restore rolled back because the current data directory could not be moved.' >&2
   exit 1
 fi
 if ! mv "$DATA_NEW" "$DATA"; then
   rollback_database
   if [ -d "$DATA_OLD" ]; then mv "$DATA_OLD" "$DATA"; else install -d -m 0750 "$DATA"; fi
-  restart_old_slot
+  restart_web
   echo 'Restore rolled back because the restored persistent files could not be activated.' >&2
   exit 1
 fi
 
-if [ "$NO_RESTART" -eq 0 ] && [ -n "$SLOT" ]; then
-  if ! pm2 restart "web-$SLOT" >/dev/null; then rollback_state; echo 'Restore rolled back because the web process would not restart.' >&2; exit 1; fi
+if [ "$RESTART" -eq 1 ]; then
+  if ! systemctl restart web; then rollback_state; echo 'Restore rolled back because the web service would not restart.' >&2; exit 1; fi
   READY=0
   for _ in $(seq 1 30); do
-    if curl -fsS -o /dev/null --max-time 1 "http://127.0.0.1:$PORT/"; then READY=1; break; fi
+    if curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:3000/; then READY=1; break; fi
     sleep 0.1
   done
   if [ "$READY" != 1 ]; then rollback_state; echo 'Restore rolled back because the restored site did not become ready.' >&2; exit 1; fi

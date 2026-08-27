@@ -115,12 +115,13 @@ func remoteProbe(cfg config, staticIP string) string {
 	domain := cfg.domainFor(cfg.Account)
 	hermesHash := hermesManagedHash()
 	deployHash := contentHash(buildDeployScript())
+	shipHash := contentHash(buildShipScript())
 	backupHash := contentHash(buildBackupScript())
 	restoreHash := contentHash(buildRestoreScript())
 	contextHash := contentHash(buildHermesProjectContext(cfg, domain))
 	script := `
 echo READY_SSH
-if command -v node >/dev/null && command -v psql >/dev/null && command -v pm2 >/dev/null && command -v nginx >/dev/null && swapon --show=NAME --noheadings | grep -qx /swapfile; then echo READY_SYSTEM; fi
+if command -v node >/dev/null && command -v psql >/dev/null && command -v nginx >/dev/null && swapon --show=NAME --noheadings | grep -qx /swapfile; then echo READY_SYSTEM; fi
 if command -v hermes >/dev/null && [ -s /root/.hermes/SOUL.md ] && [ "$(cat ` + shellQuote(hermesManagedHashFile) + ` 2>/dev/null)" = "` + hermesHash + `" ]; then echo READY_HERMES; fi
 if command -v hermes >/dev/null && hermes auth status openai-codex 2>/dev/null | grep -Eqi "logged in|authenticated" && [ "$(hermes config get model.provider 2>/dev/null)" = "openai-codex" ] && [ "$(hermes config get model.default 2>/dev/null)" = "` + chatGPTModel + `" ] && [ "$(hermes config get agent.reasoning_effort 2>/dev/null)" = "` + chatGPTEffort + `" ]; then echo READY_CHATGPT; fi
 `
@@ -128,11 +129,7 @@ if command -v hermes >/dev/null && hermes auth status openai-codex 2>/dev/null |
 		script += `if [ -d /website/app/.git ] && [ "$(git -C /website/app remote get-url origin 2>/dev/null)" = ` + shellQuote("git@github.com:"+cfg.Repo+".git") + ` ] && grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts 2>/dev/null; then echo READY_GITHUB; fi
 `
 	}
-	script += `SLOT="$(cat /var/lib/website/current-slot 2>/dev/null || true)"
-PORT=''
-[ "$SLOT" = blue ] && PORT=3001
-[ "$SLOT" = green ] && PORT=3002
-if [ ! -d /website/.git ] && [ -d /website/data ] && [ -x /website/app/ops/deploy.sh ] && [ -x /website/app/ops/backup.sh ] && [ -x /website/app/ops/restore.sh ] && [ -s /website/app/.hermes.md ] && [ -f /var/lib/website/initialized ] && [ -x /usr/local/bin/backup-web ] && [ -x /usr/local/bin/restore-web ] && systemctl is-enabled --quiet web-backup.timer && systemctl is-active --quiet web-backup.timer && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql && [ "$(sha256sum /website/app/ops/deploy.sh 2>/dev/null | awk '{print $1}')" = "` + deployHash + `" ] && [ "$(sha256sum /website/app/ops/backup.sh 2>/dev/null | awk '{print $1}')" = "` + backupHash + `" ] && [ "$(sha256sum /website/app/ops/restore.sh 2>/dev/null | awk '{print $1}')" = "` + restoreHash + `" ] && [ "$(sha256sum /website/app/.hermes.md 2>/dev/null | awk '{print $1}')" = "` + contextHash + `" ] && [ -n "$PORT" ] && nginx -t >/dev/null 2>&1 && nginx -T 2>/dev/null | grep -Fq "server 127.0.0.1:$PORT;" && pm2 describe "web-$SLOT" >/dev/null 2>&1 && curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"; then echo READY_WEB; fi
+	script += `if [ ! -d /website/.git ] && [ -d /website/data ] && [ -x /website/app/ops/deploy.sh ] && [ -x /website/app/ops/ship.sh ] && [ -x /website/app/ops/backup.sh ] && [ -x /website/app/ops/restore.sh ] && [ -s /website/app/.hermes.md ] && [ -f /var/lib/website/initialized ] && [ -x /usr/local/bin/deploy-web ] && [ -x /usr/local/bin/ship-web ] && [ -x /usr/local/bin/backup-web ] && [ -x /usr/local/bin/restore-web ] && systemctl is-enabled --quiet web.service && systemctl is-active --quiet web.service && systemctl is-enabled --quiet web-backup.timer && systemctl is-active --quiet web-backup.timer && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql && [ "$(sha256sum /website/app/ops/deploy.sh 2>/dev/null | awk '{print $1}')" = "` + deployHash + `" ] && [ "$(sha256sum /website/app/ops/ship.sh 2>/dev/null | awk '{print $1}')" = "` + shipHash + `" ] && [ "$(sha256sum /website/app/ops/backup.sh 2>/dev/null | awk '{print $1}')" = "` + backupHash + `" ] && [ "$(sha256sum /website/app/ops/restore.sh 2>/dev/null | awk '{print $1}')" = "` + restoreHash + `" ] && [ "$(sha256sum /website/app/.hermes.md 2>/dev/null | awk '{print $1}')" = "` + contextHash + `" ] && nginx -t >/dev/null 2>&1 && nginx -T 2>/dev/null | grep -Fq 'proxy_pass http://127.0.0.1:3000;' && curl -fsS -o /dev/null --max-time 2 http://127.0.0.1:3000/; then echo READY_WEB; fi
 `
 	if domain == "" {
 		script += "echo READY_DNS\necho READY_HTTPS\n"

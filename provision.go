@@ -127,7 +127,7 @@ func runProvisionStep(index int, cfg config, billingID string) (config, string, 
 		return newCfg, newCfg.Repo, r, err
 	case 11:
 		r, err := setupWeb(cfg)
-		return cfg, "Node · Postgres · PM2 · Nginx", r, err
+		return cfg, "Node · Postgres · systemd · Nginx", r, err
 	case 12:
 		r, err := ensureDNS(cfg)
 		return cfg, cfg.domainFor(cfg.Account), r, err

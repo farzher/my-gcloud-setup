@@ -49,6 +49,7 @@ func verifyServer(cfg config) (commandResult, error) {
 	domain := cfg.domainFor(cfg.Account)
 	hermesHash := hermesManagedHash()
 	deployHash := contentHash(buildDeployScript())
+	shipHash := contentHash(buildShipScript())
 	backupHash := contentHash(buildBackupScript())
 	restoreHash := contentHash(buildRestoreScript())
 	contextHash := contentHash(buildHermesProjectContext(cfg, domain))
@@ -59,7 +60,6 @@ swapon --show=NAME --noheadings | grep -qx /swapfile
 [ "$(stat -c %s /swapfile)" = 1073741824 ]
 command -v node >/dev/null
 command -v psql >/dev/null
-command -v pm2 >/dev/null
 command -v nginx >/dev/null
 command -v hermes >/dev/null
 hermes auth status openai-codex | grep -Eqi 'logged in|authenticated'
@@ -76,28 +76,27 @@ grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts
 [ -f /var/lib/website/initialized ]
 [ -s /website/app/.hermes.md ]
 [ -x /website/app/ops/deploy.sh ]
+[ -x /website/app/ops/ship.sh ]
 [ -x /website/app/ops/backup.sh ]
 [ -x /website/app/ops/restore.sh ]
 [ "$(sha256sum /website/app/ops/deploy.sh | awk '{print $1}')" = "` + deployHash + `" ]
+[ "$(sha256sum /website/app/ops/ship.sh | awk '{print $1}')" = "` + shipHash + `" ]
 [ "$(sha256sum /website/app/ops/backup.sh | awk '{print $1}')" = "` + backupHash + `" ]
 [ "$(sha256sum /website/app/ops/restore.sh | awk '{print $1}')" = "` + restoreHash + `" ]
 [ "$(sha256sum /website/app/.hermes.md | awk '{print $1}')" = "` + contextHash + `" ]
+[ -x /usr/local/bin/deploy-web ]
+[ -x /usr/local/bin/ship-web ]
 [ -x /usr/local/bin/backup-web ]
 [ -x /usr/local/bin/restore-web ]
+systemctl is-enabled --quiet web.service
+systemctl is-active --quiet web.service
 systemctl is-enabled --quiet web-backup.timer
 systemctl is-active --quiet web-backup.timer
 systemctl is-active --quiet nginx
 systemctl is-active --quiet postgresql
 nginx -t >/dev/null 2>&1
-SLOT="$(cat /var/lib/website/current-slot)"
-case "$SLOT" in
-  blue) PORT=3001 ;;
-  green) PORT=3002 ;;
-  *) exit 1 ;;
-esac
-nginx -T 2>/dev/null | grep -Fq "server 127.0.0.1:$PORT;"
-pm2 describe "web-$SLOT" >/dev/null
-curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/"
+nginx -T 2>/dev/null | grep -Fq 'proxy_pass http://127.0.0.1:3000;'
+curl -fsS -o /dev/null --max-time 2 http://127.0.0.1:3000/
 `
 	if domain != "" {
 		cert := "/etc/letsencrypt/live/" + domain + "/fullchain.pem"

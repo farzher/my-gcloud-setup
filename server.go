@@ -30,8 +30,6 @@ vm.vfs_cache_pressure=100
 SYSCTL
 sysctl -p /etc/sysctl.d/90-cloud-low-memory.conf >/dev/null
 
-npm install -g pm2 --no-audit --no-fund
-
 for d in /etc/postgresql/*/main; do
   [ -d "$d" ] || continue
   mkdir -p "$d/conf.d"
@@ -49,7 +47,6 @@ systemctl restart postgresql
 su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='root'\"" | grep -q 1 || su - postgres -c "createuser root"
 su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='web'\"" | grep -q 1 || su - postgres -c "createdb -O root web"
 
-pm2 startup systemd -u root --hp /root >/dev/null 2>&1 || true
 mkdir -p /etc/systemd/system/hermes-gateway.service.d
 cat >/etc/systemd/system/hermes-gateway.service.d/limits.conf <<'LIMITS'
 [Service]

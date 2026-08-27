@@ -30,7 +30,7 @@ The TUI warns before creating resources when it can see unrelated Compute Engine
 - reserved Premium IPv4
 - TCP 22 / 80 / 443
 - 1 GB emergency swap
-- Node.js, PostgreSQL, PM2, Nginx
+- Node.js, PostgreSQL, systemd, Nginx
 - Certbot / Let's Encrypt when a domain is configured
 - lean Hermes Agent using ChatGPT/Codex
 - one private GitHub repository with a write-enabled VM deploy key
@@ -45,6 +45,7 @@ Everything application-specific lives under one top-level folder, with a hard bo
 │   ├── .git/
 │   ├── .hermes.md
 │   ├── ops/
+│   │   ├── ship.sh
 │   │   ├── deploy.sh
 │   │   ├── backup.sh
 │   │   └── restore.sh
@@ -66,11 +67,13 @@ DATABASE_URL=postgresql:///web?host=/var/run/postgresql
 DATA_DIR=/website/data
 ```
 
-## Deployment
+## Runtime and deployment
 
-`/usr/local/bin/deploy-web` deploys `/website/app` with blue/green PM2 slots on ports 3001 and 3002.
+Nginx proxies directly to one systemd-managed Node process on `127.0.0.1:3000`. systemd restarts the process if it crashes.
 
-It starts the inactive slot, requires a successful local HTTP response, validates and reloads Nginx, then removes the old slot. Failed readiness or Nginx checks leave the previous slot live.
+`/usr/local/bin/deploy-web` installs production dependencies only when package files changed, restarts `web.service`, and waits for a successful local HTTP response before returning.
+
+`/usr/local/bin/ship-web "message"` is the normal development finish command: it stages all changes, commits, pushes, then runs `deploy-web`. Any failure stops the chain.
 
 Deploy, backup, and restore share one lock so state-changing operations cannot overlap.
 
@@ -93,7 +96,7 @@ A systemd timer runs daily around 03:15. Unchanged files deduplicate as Git blob
 
 `/usr/local/bin/restore-web` restores PostgreSQL and `/website/data` together from `latest` or an explicit retained snapshot such as `daily/2026-08-26`.
 
-Restore builds replacement state first, swaps it in only after validation, and rolls back if the live site does not return successfully.
+Restore builds replacement state first, swaps it in only after validation, and rolls back if the restored site does not return successfully.
 
 Before a rebuild deletes the VM disk, the app creates a fresh remote server-state backup. A new VM then reinstalls the system, clones `main` to `/website/app`, restores the newest snapshot to PostgreSQL + `/website/data`, deploys, and re-enables automatic backups.
 
@@ -103,4 +106,4 @@ Filesystem layouts are not migrated in place. Rebuild is the clean cutover path 
 
 All custom Hermes setup is kept in `hermes.go`: model/settings, the short global `SOUL.md`, and the generated `/website/app/.hermes.md` project rules.
 
-There is no always-loaded custom web-development skill. The project rules already apply to every task in `/website/app`, so keeping the workflow there avoids duplicate context. Hermes can still learn/use other skills when they are actually relevant.
+There is no always-loaded custom web-development skill. Project rules stay short and tell Hermes to finish code changes with one `ship-web` command. Hermes can still learn/use other skills when they are actually relevant.
