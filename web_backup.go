@@ -18,6 +18,10 @@ if [ -e "$DATA/.web-backup-large" ]; then
   echo '/website/data/.web-backup-large is reserved by the backup system.' >&2
   exit 1
 fi
+if [ -d /root/.hermes/skills ] && find /root/.hermes/skills -type l -print -quit | grep -q .; then
+  echo 'Hermes skill symlinks are not supported by backup-web.' >&2
+  exit 1
+fi
 TMP="$(mktemp -d /var/tmp/web-backup.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 GIT="$TMP/git"
@@ -89,10 +93,33 @@ if [ -s "$LARGE_MANIFEST" ]; then
 fi
 FILES_TREE="$(GIT_INDEX_FILE="$FILES_INDEX" git write-tree)"
 
+# Preserve curated Hermes knowledge, learned skills, SOUL.md, and the current
+# project context without storing chat/session history, auth, config, or .env.
+HERMES_INDEX="$TMP/hermes.index"
+GIT_INDEX_FILE="$HERMES_INDEX" git read-tree --empty
+add_hermes_file() {
+  local SRC="$1" REL="$2" MODE=100644 SHA
+  [ -f "$SRC" ] || return 0
+  if [ -x "$SRC" ]; then MODE=100755; fi
+  SHA="$(git hash-object -w "$SRC")"
+  GIT_INDEX_FILE="$HERMES_INDEX" git update-index --add --cacheinfo "$MODE" "$SHA" "$REL"
+}
+add_hermes_file /root/.hermes/SOUL.md SOUL.md
+add_hermes_file /root/.hermes/memories/MEMORY.md memories/MEMORY.md
+add_hermes_file /root/.hermes/memories/USER.md memories/USER.md
+add_hermes_file "$APP/.hermes.md" project/.hermes.md
+if [ -d /root/.hermes/skills ]; then
+  while IFS= read -r -d '' FILE; do
+    add_hermes_file "$FILE" "skills/${FILE#/root/.hermes/skills/}"
+  done < <(find /root/.hermes/skills -type f -print0)
+fi
+HERMES_TREE="$(GIT_INDEX_FILE="$HERMES_INDEX" git write-tree)"
+
 SNAPSHOT_ENTRIES="$TMP/snapshot.entries"
 {
   printf '040000 tree %s\tdatabase\n' "$DATABASE_TREE"
   printf '040000 tree %s\tfiles\n' "$FILES_TREE"
+  printf '040000 tree %s\thermes\n' "$HERMES_TREE"
 } >"$SNAPSHOT_ENTRIES"
 SNAPSHOT_TREE="$(git mktree <"$SNAPSHOT_ENTRIES")"
 
@@ -135,7 +162,7 @@ YEARLY_TREE="$(category_tree yearly "$YEAR" 10)"
 cat >"$TMP/README.md" <<'BACKUPREADME'
 # Server state backups
 
-Automatic PostgreSQL + /website/data snapshots.
+Automatic PostgreSQL + /website/data + curated Hermes snapshots.
 
 Retention:
 - 7 daily
@@ -143,7 +170,9 @@ Retention:
 - 12 monthly
 - 10 yearly
 
-Each snapshot contains database/ and files/. PostgreSQL uses pg_dump -Fc; persistent files are individual Git blobs so unchanged files deduplicate between snapshots. Individual database chunks or persistent files larger than about 90 MiB are split into GitHub-safe parts and transparently reconstructed by restore-web.
+Each snapshot contains database/, files/, and hermes/. PostgreSQL uses pg_dump -Fc; persistent files are individual Git blobs so unchanged files deduplicate between snapshots. Individual database chunks or persistent files larger than about 90 MiB are split into GitHub-safe parts and transparently reconstructed by restore-web.
+
+Hermes snapshots include MEMORY.md, USER.md, learned skills, SOUL.md, and a recovery copy of /website/app/.hermes.md. Chat/session history (state.db), credentials, config.yaml, and .env are intentionally excluded. restore-web restores memories, learned skills, and SOUL.md; the current managed .hermes.md remains authoritative so an old backup cannot silently replace newer project rules.
 
 The VM stores only the new snapshot temporarily. Existing retained blobs stay on GitHub; backup only fetches commit/tree metadata from the previous backup branch. The branch is rewritten as a single root commit every run so Git history does not accumulate expired snapshots.
 BACKUPREADME
@@ -161,6 +190,6 @@ git config user.name 'Cloud Backup'
 git config user.email 'backup@localhost'
 COMMIT="$(printf 'Server backup %s\n' "$DAY" | git commit-tree "$TREE")"
 git push -q --force origin "$COMMIT:refs/heads/backup"
-printf 'Backed up PostgreSQL and %s.\n' "$DATA"
+printf 'Backed up PostgreSQL, %s, and Hermes knowledge.\n' "$DATA"
 `
 }

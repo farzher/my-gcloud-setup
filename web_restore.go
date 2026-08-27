@@ -45,6 +45,7 @@ TYPE="$(git cat-file -t "HEAD:$TARGET" 2>/dev/null || true)"
 
 DB_PREFIX="$TARGET/database"
 FILES_PREFIX="$TARGET/files"
+HERMES_PREFIX="$TARGET/hermes"
 [ "$(git cat-file -t "HEAD:$DB_PREFIX" 2>/dev/null || true)" = tree ] || { echo 'Snapshot is missing database state.' >&2; exit 1; }
 [ "$(git cat-file -t "HEAD:$FILES_PREFIX" 2>/dev/null || true)" = tree ] || { echo 'Snapshot is missing persistent-file state.' >&2; exit 1; }
 DB_TREE="$(git rev-parse "HEAD:$DB_PREFIX")"
@@ -105,6 +106,29 @@ if git cat-file -e "HEAD:$MANIFEST_PATH" 2>/dev/null; then
   done <"$MANIFEST"
 fi
 
+HERMES_PRESENT=0
+HERMES_NEW="$TMP/hermes"
+if [ "$(git cat-file -t "HEAD:$HERMES_PREFIX" 2>/dev/null || true)" = tree ]; then
+  HERMES_PRESENT=1
+  install -d -m 0700 "$HERMES_NEW"
+  HERMES_TREE="$(git rev-parse "HEAD:$HERMES_PREFIX")"
+  while IFS= read -r -d '' ENTRY; do
+    META="${ENTRY%%$'\t'*}"
+    REL="${ENTRY#*$'\t'}"
+    case "$REL" in ''|/*|..|../*|*/..|*/../*) echo "Unsafe Hermes backup path: $REL" >&2; exit 1;; esac
+    case "$REL" in SOUL.md|memories/MEMORY.md|memories/USER.md|project/.hermes.md|skills/*) ;;
+      *) continue;;
+    esac
+    MODE="${META%% *}"
+    REST="${META#* }"; TYPE="${REST%% *}"; SHA="${REST##* }"
+    [ "$TYPE" = blob ] || continue
+    DEST="$HERMES_NEW/$REL"
+    mkdir -p "$(dirname "$DEST")"
+    git cat-file blob "$SHA" >"$DEST"
+    if [ "$MODE" = 100755 ]; then chmod 700 "$DEST"; else chmod 600 "$DEST"; fi
+  done < <(git ls-tree -r -z "$HERMES_TREE")
+fi
+
 RESTART=0
 if [ "$NO_RESTART" -eq 0 ] && [ -f "$STATE/initialized" ]; then RESTART=1; fi
 rollback_database() {
@@ -127,6 +151,46 @@ rollback_state() {
   rm -rf "$DATA"
   if [ -d "$DATA_OLD" ]; then mv "$DATA_OLD" "$DATA"; else install -d -m 0750 "$DATA"; fi
   restart_web
+}
+check_ready() {
+  local CODE
+  CODE="$(curl -sS -o /dev/null --max-time 1 -w '%{http_code}' http://127.0.0.1:3000/healthz 2>/dev/null || true)"
+  case "$CODE" in
+    2??) ;;
+    404) curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:3000/ || return 1 ;;
+    *) return 1 ;;
+  esac
+  psql -d web -tAc 'SELECT 1' 2>/dev/null | grep -qx 1
+}
+restore_hermes() {
+  [ "$HERMES_PRESENT" -eq 1 ] || return 0
+  install -d -m 0700 /root/.hermes /root/.hermes/memories
+  local NAME SRC TMPFILE
+  for NAME in MEMORY.md USER.md; do
+    SRC="$HERMES_NEW/memories/$NAME"
+    if [ -f "$SRC" ]; then
+      TMPFILE="/root/.hermes/memories/.$NAME.restore.$$"
+      install -m 0600 "$SRC" "$TMPFILE"
+      mv "$TMPFILE" "/root/.hermes/memories/$NAME"
+    else
+      rm -f "/root/.hermes/memories/$NAME"
+    fi
+  done
+  if [ -f "$HERMES_NEW/SOUL.md" ]; then
+    TMPFILE="/root/.hermes/.SOUL.md.restore.$$"
+    install -m 0600 "$HERMES_NEW/SOUL.md" "$TMPFILE"
+    mv "$TMPFILE" /root/.hermes/SOUL.md
+  fi
+  local SKILLS_NEW="/root/.hermes/.skills-restore.$$" SKILLS_OLD="/root/.hermes/.skills-before-restore.$$"
+  rm -rf "$SKILLS_NEW" "$SKILLS_OLD"
+  install -d -m 0700 "$SKILLS_NEW"
+  if [ -d "$HERMES_NEW/skills" ]; then cp -a "$HERMES_NEW/skills/." "$SKILLS_NEW/"; fi
+  if [ -d /root/.hermes/skills ]; then mv /root/.hermes/skills "$SKILLS_OLD"; fi
+  mv "$SKILLS_NEW" /root/.hermes/skills
+  rm -rf "$SKILLS_OLD"
+  if [ -f "$HERMES_NEW/project/.hermes.md" ] && ! cmp -s "$HERMES_NEW/project/.hermes.md" "$APP/.hermes.md"; then
+    echo 'Backup contains a different .hermes.md; current managed project rules were kept.'
+  fi
 }
 
 if [ "$RESTART" -eq 1 ]; then systemctl stop web; fi
@@ -158,13 +222,19 @@ if [ "$RESTART" -eq 1 ]; then
   if ! systemctl restart web; then rollback_state; echo 'Restore rolled back because the web service would not restart.' >&2; exit 1; fi
   READY=0
   for _ in $(seq 1 30); do
-    if curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:3000/; then READY=1; break; fi
+    if check_ready; then READY=1; break; fi
     sleep 0.1
   done
-  if [ "$READY" != 1 ]; then rollback_state; echo 'Restore rolled back because the restored site did not become ready.' >&2; exit 1; fi
+  if [ "$READY" != 1 ]; then
+    /usr/local/bin/server-status --logs >&2 || true
+    rollback_state
+    echo 'Restore rolled back because the restored site did not become ready.' >&2
+    exit 1
+  fi
 fi
 sudo -u postgres dropdb --if-exists web_before_restore >/dev/null
 rm -rf "$DATA_OLD"
-printf 'Restored %s (PostgreSQL + /website/data).\n' "$TARGET"
+restore_hermes
+printf 'Restored %s (PostgreSQL + /website/data%s).\n' "$TARGET" "$([ "$HERMES_PRESENT" -eq 1 ] && printf ' + Hermes knowledge')"
 `
 }

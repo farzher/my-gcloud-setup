@@ -23,8 +23,24 @@ fi
 if [ ! -f server.js ]; then
 cat >server.js <<'SERVER'
 const http = require('node:http');
+const { execFile } = require('node:child_process');
 const port = Number(process.env.PORT || 3000);
+const databaseUrl = process.env.DATABASE_URL || 'postgresql:///web?host=/var/run/postgresql';
+
+function databaseHealthy(callback) {
+  execFile('/usr/bin/psql', [databaseUrl, '-tAc', 'SELECT 1'], { timeout: 1000 }, (error, stdout) => {
+    callback(!error && stdout.trim() === '1');
+  });
+}
+
 http.createServer((req, res) => {
+  if (req.url === '/healthz') {
+    databaseHealthy((databaseOK) => {
+      res.writeHead(databaseOK ? 200 : 503, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ web: 'ok', database: databaseOK ? 'ok' : 'error' }) + '\n');
+    });
+    return;
+  }
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
   res.end('ready\n');
 }).listen(port, '127.0.0.1');
@@ -43,13 +59,16 @@ cat >ops/deploy.sh <<'DEPLOY'
 ` + buildDeployScript() + `DEPLOY
 cat >ops/ship.sh <<'SHIP'
 ` + buildShipScript() + `SHIP
+cat >ops/status.sh <<'STATUS'
+` + buildStatusScript() + `STATUS
 cat >ops/backup.sh <<'BACKUP'
 ` + buildBackupScript() + `BACKUP
 cat >ops/restore.sh <<'RESTORE'
 ` + buildRestoreScript() + `RESTORE
-chmod +x ops/deploy.sh ops/ship.sh ops/backup.sh ops/restore.sh
+chmod +x ops/deploy.sh ops/ship.sh ops/status.sh ops/backup.sh ops/restore.sh
 ln -sf "$APP/ops/deploy.sh" /usr/local/bin/deploy-web
 ln -sf "$APP/ops/ship.sh" /usr/local/bin/ship-web
+ln -sf "$APP/ops/status.sh" /usr/local/bin/server-status
 ln -sf "$APP/ops/backup.sh" /usr/local/bin/backup-web
 ln -sf "$APP/ops/restore.sh" /usr/local/bin/restore-web
 

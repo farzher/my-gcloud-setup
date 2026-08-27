@@ -21,15 +21,30 @@ if [ ! -d node_modules ] || [ "$(cat "$STATE/deps-hash" 2>/dev/null || true)" !=
   printf '%s\n' "$(pkg_hash)" >"$STATE/deps-hash"
 fi
 
-systemctl restart web
+check_ready() {
+  local CODE
+  CODE="$(curl -sS -o /dev/null --max-time 1 -w '%{http_code}' http://127.0.0.1:3000/healthz 2>/dev/null || true)"
+  case "$CODE" in
+    2??) ;;
+    404) curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:3000/ || return 1 ;;
+    *) return 1 ;;
+  esac
+  psql -d web -tAc 'SELECT 1' 2>/dev/null | grep -qx 1
+}
+
+if ! systemctl restart web; then
+  echo 'Web service failed to restart.' >&2
+  /usr/local/bin/server-status --logs >&2 || true
+  exit 1
+fi
 READY=0
 for _ in $(seq 1 30); do
-  if curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:3000/; then READY=1; break; fi
+  if check_ready; then READY=1; break; fi
   sleep 0.1
 done
 if [ "$READY" != 1 ]; then
-  systemctl status web --no-pager >&2 || true
   echo 'Web service did not become ready.' >&2
+  /usr/local/bin/server-status --logs >&2 || true
   exit 1
 fi
 printf 'Deployed on port 3000.\n'

@@ -27,6 +27,7 @@ func buildHermesProjectContext(cfg config, domain string) string {
 - Runtime: Node.js + systemd + Nginx on a 1 GB VM
 - Ship changes: /usr/local/bin/ship-web
 - Deploy current checkout: /usr/local/bin/deploy-web
+- Status: /usr/local/bin/server-status
 - Backup: /usr/local/bin/backup-web
 - Restore: /usr/local/bin/restore-web
 `
@@ -39,6 +40,8 @@ func buildHermesProjectContext(cfg config, domain string) string {
 - Keep commands serial and lightweight. Do not use browsers, computer-use, subagents, containers, or heavyweight tooling unless explicitly requested.
 - Do not add or run tests, linters, type checks, benchmarks, or manual health checks unless explicitly requested; deploy-web performs the deployment health check.
 - Put durable file bytes in DATA_DIR and structured/queryable state in PostgreSQL. Never put runtime data in the app repository.
+- Tracked static assets belong in the app repo; mutable, generated, or user-created files belong under DATA_DIR and should be served from there rather than copied into the repo.
+- Keep GET /healthz lightweight and unauthenticated; return 200 only when the web app and PostgreSQL are healthy, and report both statuses in the response.
 - After code changes, run ship-web "<short commit message>", then reply when it succeeds.
 - If ship-web or deploy-web fails because of the code or dependencies you changed, diagnose the failure, fix it, and retry. Do not stop at the first self-caused failure.
 - If the failure is external or infrastructural (for example auth, permissions, disk, database service, network, or an operation lock), or cannot be safely fixed from the requested change, report it instead of making unrelated server changes.
