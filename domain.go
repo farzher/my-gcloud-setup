@@ -47,6 +47,7 @@ systemctl enable --now certbot.timer >/dev/null 2>&1 || true
 
 func verifyServer(cfg config) (commandResult, error) {
 	domain := cfg.domainFor(cfg.Account)
+	hermesHash := hermesManagedHash()
 	deployHash := contentHash(buildDeployScript())
 	backupHash := contentHash(buildBackupScript())
 	restoreHash := contentHash(buildRestoreScript())
@@ -66,22 +67,21 @@ hermes auth status openai-codex | grep -Eqi 'logged in|authenticated'
 [ "$(hermes config get model.default)" = ` + chatGPTModel + ` ]
 [ "$(hermes config get agent.reasoning_effort)" = ` + chatGPTEffort + ` ]
 [ -s /root/.hermes/SOUL.md ]
-[ -s /root/.hermes/skills/farzher-web-development/SKILL.md ]
-grep -q '^## Persistent application files$' /root/.hermes/skills/farzher-web-development/SKILL.md
-[ -d /website/.git ]
-[ "$(git -C /website remote get-url origin)" = ` + shellQuote("git@github.com:"+cfg.Repo+".git") + ` ]
+[ "$(cat ` + shellQuote(hermesManagedHashFile) + `)" = "` + hermesHash + `" ]
+[ ! -d /website/.git ]
+[ -d /website/app/.git ]
+[ "$(git -C /website/app remote get-url origin)" = ` + shellQuote("git@github.com:"+cfg.Repo+".git") + ` ]
 grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts
 [ -d /website/data ]
-grep -qxF 'data/' /website/.gitignore
 [ -f /var/lib/website/initialized ]
-[ -s /website/.hermes.md ]
-[ -x /website/ops/deploy.sh ]
-[ -x /website/ops/backup.sh ]
-[ -x /website/ops/restore.sh ]
-[ "$(sha256sum /website/ops/deploy.sh | awk '{print $1}')" = "` + deployHash + `" ]
-[ "$(sha256sum /website/ops/backup.sh | awk '{print $1}')" = "` + backupHash + `" ]
-[ "$(sha256sum /website/ops/restore.sh | awk '{print $1}')" = "` + restoreHash + `" ]
-[ "$(sha256sum /website/.hermes.md | awk '{print $1}')" = "` + contextHash + `" ]
+[ -s /website/app/.hermes.md ]
+[ -x /website/app/ops/deploy.sh ]
+[ -x /website/app/ops/backup.sh ]
+[ -x /website/app/ops/restore.sh ]
+[ "$(sha256sum /website/app/ops/deploy.sh | awk '{print $1}')" = "` + deployHash + `" ]
+[ "$(sha256sum /website/app/ops/backup.sh | awk '{print $1}')" = "` + backupHash + `" ]
+[ "$(sha256sum /website/app/ops/restore.sh | awk '{print $1}')" = "` + restoreHash + `" ]
+[ "$(sha256sum /website/app/.hermes.md | awk '{print $1}')" = "` + contextHash + `" ]
 [ -x /usr/local/bin/backup-web ]
 [ -x /usr/local/bin/restore-web ]
 systemctl is-enabled --quiet web-backup.timer

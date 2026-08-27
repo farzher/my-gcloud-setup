@@ -2,14 +2,14 @@ package main
 
 func buildWebProvisionScript(cfg config, serverName, hermesContext string) string {
 	return `set -Eeuo pipefail
-REPO=/website
-DATA="$REPO/data"
+APP=/website/app
+DATA=/website/data
 STATE=/var/lib/website
-install -d -m 0755 "$STATE"
-mkdir -p "$REPO/ops"
+install -d -m 0755 /website "$STATE"
 install -d -m 0750 "$DATA"
+mkdir -p "$APP/ops"
 
-cd "$REPO"
+cd "$APP"
 git checkout -B main >/dev/null 2>&1 || true
 if [ ! -f package.json ]; then
 cat >package.json <<'PACKAGE'
@@ -32,10 +32,10 @@ SERVER
 fi
 
 touch .gitignore
+sed -i '/^data\/$/d' .gitignore
 grep -qxF 'node_modules/' .gitignore || echo 'node_modules/' >> .gitignore
 grep -qxF '.env' .gitignore || echo '.env' >> .gitignore
 grep -qxF '*.log' .gitignore || echo '*.log' >> .gitignore
-grep -qxF 'data/' .gitignore || echo 'data/' >> .gitignore
 
 cat >.hermes.md <<'HERMES'
 ` + hermesContext + `HERMES
@@ -46,9 +46,9 @@ cat >ops/backup.sh <<'BACKUP'
 cat >ops/restore.sh <<'RESTORE'
 ` + buildRestoreScript() + `RESTORE
 chmod +x ops/deploy.sh ops/backup.sh ops/restore.sh
-ln -sf "$REPO/ops/deploy.sh" /usr/local/bin/deploy-web
-ln -sf "$REPO/ops/backup.sh" /usr/local/bin/backup-web
-ln -sf "$REPO/ops/restore.sh" /usr/local/bin/restore-web
+ln -sf "$APP/ops/deploy.sh" /usr/local/bin/deploy-web
+ln -sf "$APP/ops/backup.sh" /usr/local/bin/backup-web
+ln -sf "$APP/ops/restore.sh" /usr/local/bin/restore-web
 
 cat >/etc/systemd/system/web-backup.service <<'SERVICE'
 [Unit]
@@ -103,7 +103,7 @@ if ! git diff --cached --quiet; then
   git commit -m 'Configure web server' >/dev/null
   git push -u origin HEAD:main
 fi
-hermes config set terminal.cwd /website >/dev/null
+hermes config set terminal.cwd "$APP" >/dev/null
 
 # A fresh VM restores remote state before the first deployment or backup.
 # The marker prevents repeated setup on the same VM from restoring over live state.

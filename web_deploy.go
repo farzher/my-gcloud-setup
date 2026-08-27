@@ -3,14 +3,14 @@ package main
 func buildDeployScript() string {
 	return `#!/bin/bash
 set -Eeuo pipefail
-REPO=/website
-DATA="$REPO/data"
+APP=/website/app
+DATA=/website/data
 STATE=/var/lib/website
 exec 9>/run/lock/web-state.lock
 flock -n 9 || { echo 'Another deploy, backup, or restore is already running.' >&2; exit 1; }
 install -d -m 0750 "$DATA"
 install -d -m 0755 "$STATE"
-cd "$REPO"
+cd "$APP"
 CURRENT="$(cat "$STATE/current-slot" 2>/dev/null || true)"
 if [ "$CURRENT" = blue ]; then NEXT=green; PORT=3002; else NEXT=blue; PORT=3001; fi
 NAME="web-$NEXT"

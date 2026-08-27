@@ -37,22 +37,24 @@ The TUI warns before creating resources when it can see unrelated Compute Engine
 
 ## Website layout
 
+Everything application-specific lives under one top-level folder, with a hard boundary between Git and runtime data:
+
 ```text
 /website/
-├── .git/
-├── .gitignore
-├── .hermes.md
-├── data/          # persistent, Git-ignored
-├── ops/
-│   ├── deploy.sh
-│   ├── backup.sh
-│   └── restore.sh
-└── ...source files
+├── app/             # Git repository
+│   ├── .git/
+│   ├── .hermes.md
+│   ├── ops/
+│   │   ├── deploy.sh
+│   │   ├── backup.sh
+│   │   └── restore.sh
+│   └── ...source files
+└── data/            # persistent runtime files, never Git
 ```
 
 Durable state is split cleanly:
 
-- source and ops -> private GitHub `main`
+- source and ops -> `/website/app` -> private GitHub `main`
 - structured data -> PostgreSQL database `web`
 - durable files -> `/website/data`
 - PostgreSQL + durable-file snapshots -> private GitHub `backup`
@@ -66,7 +68,7 @@ DATA_DIR=/website/data
 
 ## Deployment
 
-`/usr/local/bin/deploy-web` uses blue/green PM2 slots on ports 3001 and 3002.
+`/usr/local/bin/deploy-web` deploys `/website/app` with blue/green PM2 slots on ports 3001 and 3002.
 
 It starts the inactive slot, requires a successful local HTTP response, validates and reloads Nginx, then removes the old slot. Failed readiness or Nginx checks leave the previous slot live.
 
@@ -93,10 +95,12 @@ A systemd timer runs daily around 03:15. Unchanged files deduplicate as Git blob
 
 Restore builds replacement state first, swaps it in only after validation, and rolls back if the live site does not return successfully.
 
-Before a rebuild deletes the VM disk, the app creates a fresh remote server-state backup. A new VM then reinstalls the system, clones `main`, restores the newest snapshot, deploys, and re-enables automatic backups.
+Before a rebuild deletes the VM disk, the app creates a fresh remote server-state backup. A new VM then reinstalls the system, clones `main` to `/website/app`, restores the newest snapshot to PostgreSQL + `/website/data`, deploys, and re-enables automatic backups.
+
+Filesystem layouts are not migrated in place. Rebuild is the clean cutover path when the managed layout changes.
 
 ## Hermes
 
-All custom Hermes setup is kept in `hermes.go`: Hermes settings, `SOUL.md`, `/website/.hermes.md`, and the `farzher-web-development` skill. Edit that one file to change the managed Hermes behavior.
+All custom Hermes setup is kept in `hermes.go`: model/settings, the short global `SOUL.md`, and the generated `/website/app/.hermes.md` project rules.
 
-Hermes works from `/website` and is configured for the 1 GB VM. Persistent files belong under `DATA_DIR`; structured application state belongs in PostgreSQL.
+There is no always-loaded custom web-development skill. The project rules already apply to every task in `/website/app`, so keeping the workflow there avoids duplicate context. Hermes can still learn/use other skills when they are actually relevant.

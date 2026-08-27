@@ -4,9 +4,9 @@ func buildBackupScript() string {
 	return `#!/bin/bash
 set -Eeuo pipefail
 umask 077
-REPO=/website
-DATA="$REPO/data"
-REMOTE="$(git -C "$REPO" remote get-url origin)"
+APP=/website/app
+DATA=/website/data
+REMOTE="$(git -C "$APP" remote get-url origin)"
 exec 9>/run/lock/web-state.lock
 flock -n 9 || { echo 'Another deploy, backup, or restore is already running.' >&2; exit 1; }
 install -d -m 0750 "$DATA"

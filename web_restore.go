@@ -4,10 +4,10 @@ func buildRestoreScript() string {
 	return `#!/bin/bash
 set -Eeuo pipefail
 umask 077
-REPO=/website
-DATA="$REPO/data"
+APP=/website/app
+DATA=/website/data
 STATE=/var/lib/website
-REMOTE="$(git -C "$REPO" remote get-url origin)"
+REMOTE="$(git -C "$APP" remote get-url origin)"
 TARGET="${1:-latest}"
 NO_RESTART=0
 if [ "${2:-}" = '--no-restart' ]; then NO_RESTART=1; fi

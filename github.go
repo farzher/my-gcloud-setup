@@ -121,17 +121,23 @@ Host github.com
 SSHCFG
 chmod 600 /root/.ssh/config
 
-if [ ! -d /website/.git ]; then
-  if [ -e /website ] && [ -n "$(find /website -mindepth 1 -print -quit 2>/dev/null)" ]; then
-    echo '/website exists and is not a Git repository; refusing to overwrite it.' >&2
+if [ -d /website/.git ]; then
+  echo 'Old /website repository layout detected. Rebuild the server to use /website/app.' >&2
+  exit 1
+fi
+install -d -m 0755 /website
+install -d -m 0750 /website/data
+if [ ! -d /website/app/.git ]; then
+  if [ -e /website/app ] && [ -n "$(find /website/app -mindepth 1 -print -quit 2>/dev/null)" ]; then
+    echo '/website/app exists and is not a Git repository; refusing to overwrite it.' >&2
     exit 1
   fi
-  rm -rf /website
-  git clone ` + shellQuote(remoteURL) + ` /website
+  rm -rf /website/app
+  git clone ` + shellQuote(remoteURL) + ` /website/app
 fi
-git -C /website remote set-url origin ` + shellQuote(remoteURL) + `
-git -C /website config user.name Hermes
-git -C /website config user.email ` + shellQuote(adminEmail) + `
+git -C /website/app remote set-url origin ` + shellQuote(remoteURL) + `
+git -C /website/app config user.name Hermes
+git -C /website/app config user.email ` + shellQuote(adminEmail) + `
 `
 	remoteResult, err := runRemoteBash(cfg, 90*time.Second, script)
 	all = mergeResult(all, remoteResult)
@@ -143,8 +149,8 @@ func discoverServerRepo(cfg config) string {
 		return ""
 	}
 	remote := `set -e
-[ -d /website/.git ]
-git -C /website remote get-url origin`
+[ -d /website/app/.git ]
+git -C /website/app remote get-url origin`
 	r, err := runTimeout(30*time.Second, "gcloud", "compute", "ssh", vmName,
 		"--project="+cfg.Project, "--zone="+zone,
 		"--command=sudo -n bash -c "+shellQuote(remote), "--quiet")
