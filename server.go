@@ -9,7 +9,7 @@ export NEEDRESTART_MODE=a
 
 apt-get update
 apt-get install -y --no-install-recommends \
-  ca-certificates curl git openssh-client xz-utils \
+  ca-certificates curl git openssh-client xz-utils logrotate \
   nodejs npm postgresql nginx certbot python3-certbot-nginx
 
 SWAP_BYTES=1073741824
@@ -29,6 +29,47 @@ vm.swappiness=10
 vm.vfs_cache_pressure=100
 SYSCTL
 sysctl -p /etc/sysctl.d/90-cloud-low-memory.conf >/dev/null
+
+install -d /etc/systemd/journald.conf.d
+cat >/etc/systemd/journald.conf.d/90-cloud-small.conf <<'JOURNAL'
+[Journal]
+SystemMaxUse=64M
+SystemKeepFree=256M
+MaxRetentionSec=7day
+MaxFileSec=1day
+Compress=yes
+JOURNAL
+systemctl restart systemd-journald
+
+cat >/etc/logrotate.d/nginx <<'LOGROTATE'
+/var/log/nginx/*.log {
+    daily
+    rotate 5
+    maxsize 5M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 www-data adm
+    sharedscripts
+    postrotate
+        invoke-rc.d nginx rotate >/dev/null 2>&1
+    endscript
+}
+LOGROTATE
+cat >/etc/logrotate.d/postgresql-common <<'LOGROTATE'
+/var/log/postgresql/*.log {
+    daily
+    rotate 5
+    maxsize 5M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+LOGROTATE
+systemctl enable --now logrotate.timer >/dev/null 2>&1 || true
 
 for d in /etc/postgresql/*/main; do
   [ -d "$d" ] || continue

@@ -67,6 +67,9 @@ Environment=NODE_OPTIONS=--max-old-space-size=224
 ExecStart=/usr/bin/npm start
 Restart=on-failure
 RestartSec=1
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=web
 
 [Install]
 WantedBy=multi-user.target
