@@ -97,4 +97,6 @@ Before a rebuild deletes the VM disk, the app creates a fresh remote server-stat
 
 ## Hermes
 
-Hermes works from `/website`, follows `/website/.hermes.md` plus the `farzher-web-development` skill, and is configured for the 1 GB VM. Persistent files belong under `DATA_DIR`; structured application state belongs in PostgreSQL.
+All custom Hermes setup is kept in `hermes.go`: Hermes settings, `SOUL.md`, `/website/.hermes.md`, and the `farzher-web-development` skill. Edit that one file to change the managed Hermes behavior.
+
+Hermes works from `/website` and is configured for the 1 GB VM. Persistent files belong under `DATA_DIR`; structured application state belongs in PostgreSQL.

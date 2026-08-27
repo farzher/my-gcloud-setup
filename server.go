@@ -1,8 +1,6 @@
 package main
 
-import (
-	"time"
-)
+import "time"
 
 const systemScript = `#!/bin/bash
 set -Eeuo pipefail
@@ -63,91 +61,6 @@ apt-get clean
 rm -rf /var/lib/apt/lists/*
 `
 
-const hermesScript = `#!/bin/bash
-set -Eeuo pipefail
-export PATH="/root/.local/bin:/usr/local/bin:$PATH"
-
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh \
-  | bash -s -- --skip-setup --skip-browser --skip-computer-use --no-skills
-
-HERMES="$(command -v hermes)"
-[ -n "$HERMES" ]
-ln -sf "$HERMES" /usr/local/bin/hermes
-hermes skills opt-out --remove --yes >/dev/null 2>&1 || hermes skills opt-out >/dev/null
-
-hermes config set agent.disabled_toolsets '["browser","computer_use","code_execution","delegation","vision"]' >/dev/null
-hermes config set agent.tool_use_enforcement true >/dev/null
-hermes config set tool_output.max_bytes 30000 >/dev/null
-hermes config set tool_output.max_lines 800 >/dev/null
-hermes config set skills.write_approval true >/dev/null
-hermes config set memory.memory_enabled true >/dev/null
-hermes config set memory.user_profile_enabled true >/dev/null
-hermes config set memory.write_approval false >/dev/null
-
-mkdir -p /root/.hermes/skills/farzher-web-development
-cat >/root/.hermes/SOUL.md <<'SOUL'
-You are Farzher's web developer on a tiny production server.
-Be direct, fast, practical, and concise. Prefer the smallest straightforward implementation.
-The machine has 1 GB RAM and 1 GB emergency swap. Keep work serial and low-memory; never launch browser or computer-use tooling.
-The complete website repository is /website. Project-specific rules live in /website/.hermes.md and must be followed for development work.
-SOUL
-
-cat >/root/.hermes/skills/farzher-web-development/SKILL.md <<'SKILL'
----
-name: farzher-web-development
-description: Use for every development task on this server. Fast, direct, low-memory web development with immediate commit, push, and deployment.
-platforms: [linux]
----
-# Farzher Web Development
-
-Use this skill for every task that changes the website, server application, database-facing application code, Nginx application configuration, or deployment code.
-
-## Goal
-Quick iteration and quick turnaround. Implement the requested change directly, keep it simple, deploy it, and respond immediately.
-
-## Environment
-- Work in /website. This is the complete website Git repository.
-- /website/data is the persistent runtime-data directory. It lives inside the website tree but is ignored by Git as data/.
-- Node receives DATA_DIR=/website/data.
-- This server has 1 GB RAM and 1 GB emergency swap. Swap is not working memory; avoid memory pressure.
-- Stack: Node.js, PostgreSQL, PM2, Nginx.
-- Keep commands serial. Avoid heavyweight dependencies, frameworks, build pipelines, containers, browsers, subagents, and background analysis unless the user specifically asks.
-
-## Persistent application files
-- Use PostgreSQL for structured/queryable application state.
-- Use DATA_DIR for uploads, images, avatars, attachments, generated media, exports, and other durable runtime files.
-- Never git add -f data, remove the data/ ignore rule, put runtime uploads in tracked source directories, or run git clean -fdx against /website.
-- Do not put large file blobs in PostgreSQL solely for persistence unless the user explicitly asks for that design.
-- Do not create symlinks in DATA_DIR; the backup system rejects them.
-- /usr/local/bin/backup-web snapshots PostgreSQL and data/ together; /usr/local/bin/restore-web restores both.
-- If the user asks for an upload page or similar feature, file bytes go under DATA_DIR and metadata/indexes can go in PostgreSQL.
-
-## Development
-- Inspect only what is needed, then edit directly.
-- Prefer existing patterns and the smallest implementation that solves the request.
-- Do not add tests unless explicitly requested.
-- Do not run tests, linters, type checks, benchmarks, broad validation, or manual HTTP health checks unless explicitly requested. deploy-web does its own fast readiness/Nginx verification.
-- Do not spend time refactoring unrelated code.
-
-## Finish every code change
-1. git add -A
-2. git commit -m "<short useful message>"
-3. git push
-4. /usr/local/bin/deploy-web
-5. Reply as soon as the deploy command returns.
-
-If a required command fails, report the failure instead of claiming deployment succeeded. Do not perform separate post-deploy health checks; deploy-web owns that verification and rollback.
-
-You may learn new reusable skills with skill_manage; skill writes are approval-gated. Never rewrite this skill, SOUL.md, or .hermes.md unless the user explicitly asks to change the permanent operating rules.
-SKILL
-
-hermes --version
-`
-
 func setupSystem(cfg config) (commandResult, error) {
 	return runRemoteScript(cfg, 15*time.Minute, systemScript)
-}
-
-func installHermes(cfg config) (commandResult, error) {
-	return runRemoteScript(cfg, 15*time.Minute, hermesScript)
 }
