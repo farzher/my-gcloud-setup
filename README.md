@@ -43,7 +43,7 @@ Everything application-specific lives under one top-level folder, with a hard bo
 /website/
 ├── app/             # Git repository
 │   ├── .git/
-│   ├── .hermes.md
+│   ├── AGENTS.md
 │   ├── ops/
 │   │   ├── ship.sh
 │   │   ├── deploy.sh
@@ -97,7 +97,7 @@ Retention:
 
 A systemd timer runs daily around 03:15. Unchanged files deduplicate as Git blobs; individual database chunks or persistent files above roughly 90 MiB are split into GitHub-safe parts.
 
-Hermes backups include `MEMORY.md`, `USER.md`, learned skills, `SOUL.md`, and a recovery copy of `/website/app/.hermes.md`. Full chat/session history (`state.db`), credentials, and `config.yaml` are intentionally excluded. Restores automatically recover memories, skills, and `SOUL.md`; the current generated `.hermes.md` remains authoritative so a server-state backup cannot overwrite current project rules.
+Hermes backups include `MEMORY.md`, `USER.md`, learned skills, `SOUL.md`, and a recovery copy of `/website/app/AGENTS.md`. Full chat/session history (`state.db`), credentials, and `config.yaml` are intentionally excluded. Restores automatically recover memories, skills, and `SOUL.md`; the current generated `AGENTS.md` remains authoritative so a server-state backup cannot overwrite current project rules.
 
 ## Restore and rebuild
 
@@ -113,4 +113,4 @@ There are no compatibility or migration layers for managed layouts. Rebuild is t
 
 Managed Hermes defaults and generated project rules are defined in `hermes.go`. `SOUL.md` starts from the small bootstrap default there, but an existing/evolved `SOUL.md` is preserved across Hermes reconfiguration and by server backups.
 
-There is no always-loaded custom web-development skill. Project rules stay short and tell Hermes to finish code changes with one `ship-web` command. Hermes can learn and update its own skills automatically when useful. Ended chat sessions are pruned after 30 days; curated memory and learned skills are preserved by server backups.
+There is no always-loaded custom web-development skill. Project rules live in the standard `AGENTS.md` file and stay short, telling Hermes to finish code changes with one `ship-web` command. Hermes can learn and update its own skills automatically when useful. Ended chat sessions are pruned after 30 days; curated memory and learned skills are preserved by server backups.
