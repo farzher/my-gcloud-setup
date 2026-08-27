@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// This file is the single source of truth for all non-default Hermes setup.
-// Edit it to change the model, Hermes settings, SOUL.md, or /website/app/.hermes.md.
+// This file defines managed Hermes defaults and generated project rules.
+// SOUL.md is a bootstrap default; evolved SOUL, memory, and skills are preserved by backups.
 
 const (
 	chatGPTModel          = "gpt-5.6-sol"
@@ -81,8 +81,10 @@ hermes config set sessions.min_interval_hours 24 >/dev/null
 hermes config set gateway.write_sessions_json false >/dev/null
 
 mkdir -p /root/.hermes
+if [ ! -s /root/.hermes/SOUL.md ]; then
 cat >/root/.hermes/SOUL.md <<'SOUL'
 ` + hermesSoul + `SOUL
+fi
 
 hermes --version
 `

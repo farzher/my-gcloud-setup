@@ -34,6 +34,7 @@ install -d /etc/systemd/journald.conf.d
 cat >/etc/systemd/journald.conf.d/90-cloud-small.conf <<'JOURNAL'
 [Journal]
 SystemMaxUse=64M
+RuntimeMaxUse=64M
 SystemKeepFree=256M
 MaxRetentionSec=7day
 MaxFileSec=1day

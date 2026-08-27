@@ -50,6 +50,7 @@ func verifyServer(cfg config) (commandResult, error) {
 	hermesHash := hermesManagedHash()
 	deployHash := contentHash(buildDeployScript())
 	shipHash := contentHash(buildShipScript())
+	statusHash := contentHash(buildStatusScript())
 	backupHash := contentHash(buildBackupScript())
 	restoreHash := contentHash(buildRestoreScript())
 	contextHash := contentHash(buildHermesProjectContext(cfg, domain))
@@ -77,15 +78,18 @@ grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts
 [ -s /website/app/.hermes.md ]
 [ -x /website/app/ops/deploy.sh ]
 [ -x /website/app/ops/ship.sh ]
+[ -x /website/app/ops/status.sh ]
 [ -x /website/app/ops/backup.sh ]
 [ -x /website/app/ops/restore.sh ]
 [ "$(sha256sum /website/app/ops/deploy.sh | awk '{print $1}')" = "` + deployHash + `" ]
 [ "$(sha256sum /website/app/ops/ship.sh | awk '{print $1}')" = "` + shipHash + `" ]
+[ "$(sha256sum /website/app/ops/status.sh | awk '{print $1}')" = "` + statusHash + `" ]
 [ "$(sha256sum /website/app/ops/backup.sh | awk '{print $1}')" = "` + backupHash + `" ]
 [ "$(sha256sum /website/app/ops/restore.sh | awk '{print $1}')" = "` + restoreHash + `" ]
 [ "$(sha256sum /website/app/.hermes.md | awk '{print $1}')" = "` + contextHash + `" ]
 [ -x /usr/local/bin/deploy-web ]
 [ -x /usr/local/bin/ship-web ]
+[ -x /usr/local/bin/server-status ]
 [ -x /usr/local/bin/backup-web ]
 [ -x /usr/local/bin/restore-web ]
 systemctl is-enabled --quiet web.service
@@ -96,7 +100,7 @@ systemctl is-active --quiet nginx
 systemctl is-active --quiet postgresql
 nginx -t >/dev/null 2>&1
 nginx -T 2>/dev/null | grep -Fq 'proxy_pass http://127.0.0.1:3000;'
-curl -fsS -o /dev/null --max-time 2 http://127.0.0.1:3000/
+/usr/local/bin/server-status >/dev/null
 `
 	if domain != "" {
 		cert := "/etc/letsencrypt/live/" + domain + "/fullchain.pem"

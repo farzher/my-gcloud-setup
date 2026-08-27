@@ -144,7 +144,8 @@ func runProvisionStep(index int, cfg config, billingID string) (config, string, 
 
 func ensureProject(cfg config) (config, string, commandResult, error) {
 	if cfg.Project != "" {
-		if r, err := runTimeout(30*time.Second, "gcloud", "projects", "describe", cfg.Project, "--format=value(projectId)"); err == nil {
+		r, err := runTimeout(30*time.Second, "gcloud", "projects", "describe", cfg.Project, "--format=value(projectId)")
+		if err == nil {
 			labels, le := ensureProjectLabels(cfg.Project, cfg.Account)
 			r = mergeResult(r, labels)
 			if le != nil {
@@ -153,8 +154,14 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 			o, oe := ensureProjectOwner(cfg.Project)
 			return cfg, cfg.Project, mergeResult(r, o), oe
 		}
+		if !looksNotFound(usefulOutput(r)) {
+			return cfg, "", r, err
+		}
 		delete(cfg.Projects, cfg.Account)
 		cfg.Project = ""
+		if err = saveConfig(cfg); err != nil {
+			return cfg, "", r, err
+		}
 	}
 	name := cfg.nameFor(cfg.Account)
 	if name == "" {
