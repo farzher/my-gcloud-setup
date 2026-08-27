@@ -36,6 +36,7 @@ func buildHermesProjectContext(cfg config, domain string) string {
 	}
 	context += `
 ## Rules
+- There are no existing users or compatibility requirements. Do not add versioning, migrations, fallback behavior, compatibility shims, or legacy support unless explicitly requested; prefer the cleanest current design.
 - Implement requested changes directly and minimally; do not refactor unrelated code.
 - Keep commands serial and lightweight. Do not use browsers, computer-use, subagents, containers, or heavyweight tooling unless explicitly requested.
 - Do not add or run tests, linters, type checks, benchmarks, or manual health checks unless explicitly requested; deploy-web performs the deployment health check.
