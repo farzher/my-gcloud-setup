@@ -56,7 +56,7 @@ Everything application-specific lives under one top-level folder, with a hard bo
 
 Durable state is split cleanly:
 
-- source and tracked static assets -> `/website/app` -> private GitHub `main`
+- source, tracked static assets, and `.env` -> `/website/app` -> private GitHub `main`
 - structured data -> PostgreSQL database `web`
 - mutable/generated/user files -> `/website/data`
 - PostgreSQL + durable-file + curated Hermes snapshots -> private GitHub `backup`
@@ -97,7 +97,7 @@ Retention:
 
 A systemd timer runs daily around 03:15. Unchanged files deduplicate as Git blobs; individual database chunks or persistent files above roughly 90 MiB are split into GitHub-safe parts.
 
-Hermes backups include `MEMORY.md`, `USER.md`, learned skills, `SOUL.md`, and a recovery copy of `/website/app/.hermes.md`. Full chat/session history (`state.db`), credentials, `config.yaml`, and `.env` are intentionally excluded. Restores automatically recover memories, skills, and `SOUL.md`; the current generated `.hermes.md` remains authoritative so a server-state backup cannot overwrite current project rules.
+Hermes backups include `MEMORY.md`, `USER.md`, learned skills, `SOUL.md`, and a recovery copy of `/website/app/.hermes.md`. Full chat/session history (`state.db`), credentials, and `config.yaml` are intentionally excluded. Restores automatically recover memories, skills, and `SOUL.md`; the current generated `.hermes.md` remains authoritative so a server-state backup cannot overwrite current project rules.
 
 ## Restore and rebuild
 
