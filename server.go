@@ -10,6 +10,7 @@ export NEEDRESTART_MODE=a
 apt-get update
 apt-get install -y --no-install-recommends \
   ca-certificates curl git openssh-client xz-utils logrotate \
+  build-essential python3-dev libffi-dev \
   nodejs npm postgresql nginx certbot python3-certbot-nginx
 
 SWAP_BYTES=1073741824

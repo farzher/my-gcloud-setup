@@ -56,12 +56,33 @@ func buildHermesInstallScriptBody() string {
 set -Eeuo pipefail
 export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh \
-  | bash -s -- --skip-setup --skip-browser --skip-computer-use --no-skills
+# Keep native Python builds conservative on the 1 GB VM. Hermes' Node/browser
+# workspace is intentionally not installed on this headless server.
+export UV_CONCURRENT_BUILDS=1
+export UV_CONCURRENT_INSTALLS=1
+export MAKEFLAGS="-j1"
+export CMAKE_BUILD_PARALLEL_LEVEL=1
+export CARGO_BUILD_JOBS=1
+
+INSTALLER="$(mktemp)"
+trap 'rm -f "$INSTALLER"' EXIT
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "$INSTALLER"
+
+for stage in repository venv python-deps path; do
+  bash "$INSTALLER" --stage "$stage" --skip-browser --skip-computer-use --no-skills
+done
+
+mkdir -p /root/.hermes
+if [ ! -s /root/.hermes/SOUL.md ]; then
+cat >/root/.hermes/SOUL.md <<'SOUL'
+` + hermesSoul + `SOUL
+fi
+
+bash "$INSTALLER" --stage config --skip-browser --skip-computer-use --no-skills
+bash "$INSTALLER" --stage complete --skip-browser --skip-computer-use --no-skills
 
 HERMES="$(command -v hermes)"
 [ -n "$HERMES" ]
-ln -sf "$HERMES" /usr/local/bin/hermes
 hermes skills opt-out --remove --yes >/dev/null 2>&1 || hermes skills opt-out >/dev/null
 
 hermes config set agent.disabled_toolsets '["browser","computer_use","code_execution","delegation","vision"]' >/dev/null
@@ -78,12 +99,6 @@ hermes config set sessions.vacuum_after_prune true >/dev/null
 hermes config set sessions.min_vacuum_interval_days 30 >/dev/null
 hermes config set sessions.min_interval_hours 24 >/dev/null
 hermes config set gateway.write_sessions_json false >/dev/null
-
-mkdir -p /root/.hermes
-if [ ! -s /root/.hermes/SOUL.md ]; then
-cat >/root/.hermes/SOUL.md <<'SOUL'
-` + hermesSoul + `SOUL
-fi
 
 hermes --version
 `
