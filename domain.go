@@ -75,7 +75,7 @@ hermes auth status openai-codex | grep -Eqi 'logged in|authenticated'
 grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts
 [ -d /website/data ]
 [ -f /var/lib/website/initialized ]
-[ -s /website/app/.hermes.md ]
+[ -s /website/app/AGENTS.md ]
 [ -x /website/app/ops/deploy.sh ]
 [ -x /website/app/ops/ship.sh ]
 [ -x /website/app/ops/status.sh ]
@@ -86,7 +86,7 @@ grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts
 [ "$(sha256sum /website/app/ops/status.sh | awk '{print $1}')" = "` + statusHash + `" ]
 [ "$(sha256sum /website/app/ops/backup.sh | awk '{print $1}')" = "` + backupHash + `" ]
 [ "$(sha256sum /website/app/ops/restore.sh | awk '{print $1}')" = "` + restoreHash + `" ]
-[ "$(sha256sum /website/app/.hermes.md | awk '{print $1}')" = "` + contextHash + `" ]
+[ "$(sha256sum /website/app/AGENTS.md | awk '{print $1}')" = "` + contextHash + `" ]
 [ -x /usr/local/bin/deploy-web ]
 [ -x /usr/local/bin/ship-web ]
 [ -x /usr/local/bin/server-status ]
