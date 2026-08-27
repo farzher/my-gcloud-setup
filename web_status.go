@@ -21,25 +21,12 @@ service_status nginx.service
 service_status postgresql.service
 
 printf '\n== health ==\n'
-CODE="$(curl -sS -o /dev/null --max-time 2 -w '%{http_code}' "$URL/healthz" 2>/dev/null || true)"
-case "$CODE" in
-  2??)
-    HEALTH="$(curl -fsS --max-time 2 "$URL/healthz" 2>/dev/null || true)"
-    printf 'healthz: %s\n' "$(printf '%s' "$HEALTH" | tr '\n' ' ' | cut -c1-300)"
-    ;;
-  404)
-    if curl -fsS -o /dev/null --max-time 2 "$URL/"; then
-      printf 'healthz: unavailable (root HTTP check passed)\n'
-    else
-      printf 'web HTTP: failed\n'
-      FAILED=1
-    fi
-    ;;
-  *)
-    printf 'healthz: failed (HTTP %s)\n' "${CODE:-000}"
-    FAILED=1
-    ;;
-esac
+if HEALTH="$(curl -fsS --max-time 2 "$URL/healthz" 2>/dev/null)"; then
+  printf 'healthz: %s\n' "$(printf '%s' "$HEALTH" | tr '\n' ' ' | cut -c1-300)"
+else
+  printf 'healthz: failed\n'
+  FAILED=1
+fi
 
 if sudo -n -u postgres psql -d web -tAc 'SELECT 1' 2>/dev/null | grep -qx 1; then
   printf 'database: ok\n'
