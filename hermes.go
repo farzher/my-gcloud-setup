@@ -69,6 +69,12 @@ hermes config set skills.write_approval false >/dev/null
 hermes config set memory.memory_enabled true >/dev/null
 hermes config set memory.user_profile_enabled true >/dev/null
 hermes config set memory.write_approval false >/dev/null
+hermes config set sessions.auto_prune true >/dev/null
+hermes config set sessions.retention_days 30 >/dev/null
+hermes config set sessions.vacuum_after_prune true >/dev/null
+hermes config set sessions.min_vacuum_interval_days 30 >/dev/null
+hermes config set sessions.min_interval_hours 24 >/dev/null
+hermes config set gateway.write_sessions_json false >/dev/null
 
 mkdir -p /root/.hermes
 cat >/root/.hermes/SOUL.md <<'SOUL'
