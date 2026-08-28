@@ -93,7 +93,7 @@ Retention:
 - 7 daily
 - 4 weekly
 - 12 monthly
-- 10 yearly
+- unlimited yearly
 
 A systemd timer runs daily around 03:15. Unchanged files deduplicate as Git blobs; individual database chunks or persistent files above roughly 90 MiB are split into GitHub-safe parts.
 
