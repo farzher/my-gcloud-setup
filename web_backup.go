@@ -140,7 +140,11 @@ category_tree() {
   fi
   printf '%s\t%s\n' "$NAME" "$SNAPSHOT_TREE" >>"$LIST"
   local SELECTED="$TMP/$CATEGORY.selected"
-  sort -r "$LIST" | sed -n "1,${KEEP}p" >"$SELECTED"
+  if [ "$KEEP" -eq 0 ]; then
+    sort -r "$LIST" >"$SELECTED"
+  else
+    sort -r "$LIST" | sed -n "1,${KEEP}p" >"$SELECTED"
+  fi
   local ENTRIES="$TMP/$CATEGORY.entries"
   : >"$ENTRIES"
   sort "$SELECTED" | while IFS=$'\t' read -r ENTRY SHA; do
@@ -157,7 +161,7 @@ YEAR="$(date -u +%Y)"
 DAILY_TREE="$(category_tree daily "$DAY" 7)"
 WEEKLY_TREE="$(category_tree weekly "$WEEK" 4)"
 MONTHLY_TREE="$(category_tree monthly "$MONTH" 12)"
-YEARLY_TREE="$(category_tree yearly "$YEAR" 10)"
+YEARLY_TREE="$(category_tree yearly "$YEAR" 0)"
 
 cat >"$TMP/README.md" <<'BACKUPREADME'
 # Server state backups
@@ -168,7 +172,7 @@ Retention:
 - 7 daily
 - 4 weekly
 - 12 monthly
-- 10 yearly
+- unlimited yearly
 
 Each snapshot contains database/, files/, and hermes/. PostgreSQL uses pg_dump -Fc; persistent files are individual Git blobs so unchanged files deduplicate between snapshots. Individual database chunks or persistent files larger than about 90 MiB are split into GitHub-safe parts and transparently reconstructed by restore-web.
 
