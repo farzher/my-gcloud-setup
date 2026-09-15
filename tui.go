@@ -77,6 +77,7 @@ type model struct {
 	steps     []provisionStep
 	stepIndex int
 	busy      bool
+	external  externalAction
 
 	menu    []string
 	menuPos int
