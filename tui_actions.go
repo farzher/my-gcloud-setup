@@ -2,6 +2,7 @@ package main
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"errors"
 	"strings"
 )
 
@@ -111,6 +112,30 @@ func (m model) updateServer(k string) (tea.Model, tea.Cmd) {
 			m.steps[m.stepIndex].State = 1
 			m.busy = true
 			return m, runStepCmd(m.stepIndex, m.cfg, m.billingID)
+		case "s":
+			if errors.Is(m.lastErr, errDNSRequired) {
+				account := m.state.Account
+				m.cfg.setSite(account, m.cfg.nameFor(account), "")
+				if err := saveConfig(m.cfg); err != nil {
+					return m.showError(screenServer, err, err.Error())
+				}
+				m.steps[m.stepIndex].State = 2
+				m.steps[m.stepIndex].Detail = "skip"
+				if m.stepIndex+1 < len(m.steps) && m.steps[m.stepIndex+1].Name == "HTTPS" {
+					m.steps[m.stepIndex+1].State = 2
+					m.steps[m.stepIndex+1].Detail = "skip"
+					m.stepIndex++
+				}
+				m.stepIndex++
+				m.lastErr, m.lastOutput, m.lastCommand = nil, "", ""
+				if m.stepIndex >= len(m.steps) {
+					m.busy = true
+					return m, detectCmd(m.cfg)
+				}
+				m.steps[m.stepIndex].State = 1
+				m.busy = true
+				return m, runStepCmd(m.stepIndex, m.cfg, m.billingID)
+			}
 		case "d":
 			m.returnScreen = screenServer
 			m.screen = screenDetails
