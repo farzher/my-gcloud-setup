@@ -27,29 +27,31 @@ jobs:
               assert old in s, f"missing expected text in {path}"
               p.write_text(s.replace(old, new, 1))
 
-          Path("location.go").write_text('''package main
-
-type locationChoice struct {
-	Label  string
-	Place  string
-	Region string
-}
-
-var freeLocations = []locationChoice{
-	{Label: "East Coast", Place: "South Carolina", Region: "us-east1"},
-	{Label: "Central", Place: "Iowa", Region: "us-central1"},
-	{Label: "West Coast", Place: "Oregon", Region: "us-west1"},
-}
-
-func zoneForRegion(region string) string {
-	switch region {
-	case "us-east1", "us-central1", "us-west1":
-		return region + "-b"
-	default:
-		return ""
-	}
-}
-''')
+          Path("location.go").write_text("\n".join([
+              "package main",
+              "",
+              "type locationChoice struct {",
+              "\tLabel  string",
+              "\tPlace  string",
+              "\tRegion string",
+              "}",
+              "",
+              "var freeLocations = []locationChoice{",
+              "\t{Label: \"East Coast\", Place: \"South Carolina\", Region: \"us-east1\"},",
+              "\t{Label: \"Central\", Place: \"Iowa\", Region: \"us-central1\"},",
+              "\t{Label: \"West Coast\", Place: \"Oregon\", Region: \"us-west1\"},",
+              "}",
+              "",
+              "func zoneForRegion(region string) string {",
+              "\tswitch region {",
+              "\tcase \"us-east1\", \"us-central1\", \"us-west1\":",
+              "\t\treturn region + \"-b\"",
+              "\tdefault:",
+              "\t\treturn \"\"",
+              "\t}",
+              "}",
+              "",
+          ]))
 
           replace("state.go",
           '''\tBilling  map[string]string `json:"billing,omitempty"`\n\tRepos    map[string]string `json:"repos,omitempty"`\n\tDisabled map[string]bool   `json:"disabled,omitempty"`\n''',
@@ -99,17 +101,12 @@ func zoneForRegion(region string) string {
           '''\tif strings.TrimSpace(m.cfg.nameFor(m.state.Account)) == "" {\n\t\tm.editingSite = true\n\t\tm.siteInput, m.siteError = "", ""\n\t\treturn nil\n\t}\n\tif m.cfg.disabledFor(m.state.Account) {\n''',
           '''\tif strings.TrimSpace(m.cfg.nameFor(m.state.Account)) == "" {\n\t\tm.editingSite = true\n\t\tm.siteInput, m.siteError = "", ""\n\t\treturn nil\n\t}\n\tif m.cfg.regionFor(m.state.Account) == "" {\n\t\tm.screen = screenLocation\n\t\tm.locationPos = 0\n\t\treturn nil\n\t}\n\tif m.cfg.disabledFor(m.state.Account) {\n''')
 
-          # Regional/zonal resources always use the selected account's Free Tier location.
           for p in Path(".").glob("*.go"):
               s = p.read_text()
               s = s.replace('"--region="+region', '"--region="+cfg.region()')
               s = s.replace('"--zone="+zone', '"--zone="+cfg.zone()')
               p.write_text(s)
 
-          # Detection should not probe regional resources until a location is chosen.
-          replace("detect.go",
-          '''\tif s.ProjectOK {\n''',
-          '''\tif s.ProjectOK {\n''')
           p = Path("detect.go")
           s = p.read_text()
           marker = '''\tif r, err = run(ctx, "gcloud", "compute", "instances", "describe", vmName, "--project="+project, "--zone="+cfg.zone(), "--format=json"); err == nil && r.Stdout != "" {\n'''
@@ -117,7 +114,6 @@ func zoneForRegion(region string) string {
           s = s.replace(marker, '''\tif cfg.region() == "" {\n\t\treturn s, nil\n\t}\n\n''' + marker, 1)
           p.write_text(s)
 
-          # Ensure every old hard-coded regional flag was converted.
           for p in Path(".").glob("*.go"):
               s = p.read_text()
               assert '"--region="+region' not in s, p
