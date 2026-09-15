@@ -23,11 +23,14 @@ func (m model) activateMenu() (tea.Model, tea.Cmd) {
 	}
 	switch m.menu[m.menuPos] {
 	case "Hermes":
-		return m, remoteHermesCmd(m.cfg)
+		m.external = externalHermes
+		return m, tea.Quit
 	case "Gateway":
-		return m, remoteGatewayCmd(m.cfg)
+		m.external = externalGateway
+		return m, tea.Quit
 	case "SSH":
-		return m, remoteSSHCmd(m.cfg)
+		m.external = externalSSH
+		return m, tea.Quit
 	case "Restart":
 		m.busy, m.statusText = true, "Restarting"
 		return m, lifecycleCmd("Restart", m.cfg, "reset")
