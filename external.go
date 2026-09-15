@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -49,24 +50,26 @@ func runExternalSession(action externalAction, cfg config) error {
 	cmd := exec.Command(ssh, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 
-	// Bubble Tea has just released the console. Discard any pending key events
-	// from the menu selection so they cannot become input to the remote program.
+	// Bubble Tea has just released the console. Discard pending menu key events
+	// so they cannot become input to the remote program.
 	flushConsoleInput()
 	fmt.Print("\x1b[2J\x1b[H")
 	fmt.Printf("cloud · %s\n\n", name)
 
 	// On Windows Ctrl+C is delivered to every process attached to the console.
-	// Keep cloud alive while the interactive child owns the terminal; SSH/Hermes
-	// still receives the interrupt normally.
+	// Catch it in cloud while the child owns the terminal; SSH/Hermes receives
+	// its own console event and can handle it normally.
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
-	defer signal.Stop(interrupts)
-	go func() {
-		for range interrupts {
-		}
-	}()
-
 	err = cmd.Run()
+	signal.Stop(interrupts)
+	flushConsoleInput()
 	fmt.Print("\x1b[2J\x1b[H")
+
+	// Ctrl+C is a normal way to leave Hermes/Gateway and return to cloud.
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 130 {
+		return nil
+	}
 	return err
 }
