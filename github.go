@@ -139,7 +139,7 @@ git -C /website/app remote set-url origin ` + shellQuote(remoteURL) + `
 git -C /website/app config user.name Hermes
 git -C /website/app config user.email ` + shellQuote(adminEmail) + `
 `
-	remoteResult, err := runRemoteBash(cfg, 90*time.Second, script)
+	remoteResult, err := runRemoteScript(cfg, 90*time.Second, script)
 	all = mergeResult(all, remoteResult)
 	return cfg, all, err
 }
