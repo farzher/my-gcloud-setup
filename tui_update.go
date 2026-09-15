@@ -103,7 +103,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, githubAuthCmd()
 			}
 			m.steps[msg.index].State = 3
-			m.steps[msg.index].Detail = shortError(msg.err)
+			detail := shortError(msg.err)
+			for _, line := range nonEmptyLines(msg.output) {
+				if strings.Contains(strings.ToUpper(line), "ERROR") {
+					detail = shortError(errors.New(line))
+					break
+				}
+			}
+			m.steps[msg.index].Detail = detail
 			m.lastErr = msg.err
 			return m, nil
 		}
