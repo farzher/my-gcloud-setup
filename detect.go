@@ -93,8 +93,7 @@ func detect(cfg config) (cloudState, error) {
 		s.StaticIP = firstLine(r.Stdout)
 	}
 	if s.VMExists && strings.EqualFold(s.Instance.Status, "RUNNING") {
-		probe, _ := runTimeout(35*time.Second, "gcloud", "compute", "ssh", vmName,
-			"--project="+project, "--zone="+cfg.zone(), "--command="+remoteProbe(cfg, s.StaticIP), "--quiet")
+		probe, _ := runRemoteScript(cfg, 35*time.Second, remoteProbe(cfg, s.StaticIP))
 		for _, line := range nonEmptyLines(probe.Stdout) {
 			switch strings.TrimSpace(line) {
 			case "READY_SSH":
@@ -151,7 +150,7 @@ if command -v hermes >/dev/null && hermes auth status openai-codex 2>/dev/null |
 		script += `if [ -s ` + shellQuote(cert) + ` ] && nginx -T 2>/dev/null | grep -Fq ` + shellQuote("ssl_certificate "+cert) + `; then echo READY_HTTPS; fi
 `
 	}
-	return "sudo -n bash -c " + shellQuote(script)
+	return script
 }
 
 func discoverManagedProject(ctx context.Context, account string) string {
