@@ -63,6 +63,15 @@ func runExternalSession(action externalAction, cfg config) error {
 	signal.Notify(interrupts, os.Interrupt)
 	err = cmd.Run()
 	signal.Stop(interrupts)
+
+	if action == externalGateway && err == nil {
+		fmt.Println("\nStarting gateway service…")
+		serviceRemote := "sudo -n -i bash -lc " + shellQuote("set -e; loginctl enable-linger root; hermes gateway install; hermes gateway start; hermes gateway status")
+		service := exec.Command(ssh, host, serviceRemote)
+		service.Stdin, service.Stdout, service.Stderr = os.Stdin, os.Stdout, os.Stderr
+		err = service.Run()
+	}
+
 	flushConsoleInput()
 	fmt.Print("\x1b[2J\x1b[H")
 
