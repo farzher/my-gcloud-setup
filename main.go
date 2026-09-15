@@ -36,9 +36,22 @@ func main() {
 			return
 		}
 	}
-	m := initialModel()
-	if _, err := tea.NewProgram(m).Run(); err != nil {
-		fmt.Fprintln(os.Stderr, "cloud:", err)
-		os.Exit(1)
+
+	for {
+		final, err := tea.NewProgram(initialModel()).Run()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cloud:", err)
+			os.Exit(1)
+		}
+		m, ok := final.(model)
+		if !ok || m.external == externalNone {
+			return
+		}
+		if err = runExternalSession(m.external, m.cfg); err != nil {
+			fmt.Fprintln(os.Stderr, "cloud:", err)
+			fmt.Fprintln(os.Stderr, "Press Enter to return to cloud.")
+			_, _ = fmt.Fscanln(os.Stdin)
+		}
+		configureConsole()
 	}
 }
