@@ -21,7 +21,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.statusText = ""
 		if msg.err != nil {
-			return m.showError(screenLoading, msg.err, msg.err.Error())
+			back := m.screen
+			if back == screenDetails {
+				back = screenLoading
+			}
+			return m.showError(back, msg.err, msg.err.Error())
 		}
 		oldAccount := m.state.Account
 		m.state = msg.state
@@ -145,6 +149,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.showError(m.screen, msg.err, msg.err.Error())
 		}
 		return m, nil
+	case billingActionMsg:
+		if msg.err != nil {
+			return m.showError(screenBilling, msg.err, msg.err.Error())
+		}
+		m.statusText = msg.status
+		if msg.refresh {
+			m.busy = true
+			return m, detectCmd(m.cfg)
+		}
+		return m, nil
 	}
 
 	key, ok := msg.(tea.KeyPressMsg)
@@ -178,11 +192,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAccount(k)
 	case screenBilling:
 		switch k {
-		case "enter", "o":
-			return m, openBrowserCmd(billingURL)
+		case "up", "k":
+			m.billingSetupPos--
+			if m.billingSetupPos < 0 {
+				m.billingSetupPos = 2
+			}
+		case "down", "j", "tab":
+			m.billingSetupPos = (m.billingSetupPos + 1) % 3
+		case "enter":
+			switch m.billingSetupPos {
+			case 0:
+				return m, copyBillingLinkCmd(m.state.Account)
+			case 1:
+				return m, billingQRCmd(m.state.Account)
+			case 2:
+				m.statusText = "Opening billing"
+				return m, openBrowserCmd(billingSetupURL(m.state.Account))
+			}
+		case "o":
+			m.statusText = "Opening billing"
+			return m, openBrowserCmd(billingSetupURL(m.state.Account))
 		case "r":
 			m.busy = true
 			return m, detectCmd(m.cfg)
+		case "a":
+			m.screen = screenAccount
+			m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
 		case "q":
 			return m, tea.Quit
 		}

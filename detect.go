@@ -35,8 +35,14 @@ func detect(cfg config) (cloudState, error) {
 	cfg.Project = cfg.projectFor(s.Account)
 	cfg.Repo = cfg.repoFor(s.Account)
 
-	if r, err = run(ctx, "gcloud", "billing", "accounts", "list", "--filter=open=true", "--format=json"); err == nil && r.Stdout != "" {
-		_ = json.Unmarshal([]byte(r.Stdout), &s.Billing)
+	r, err = run(ctx, "gcloud", "billing", "accounts", "list", "--filter=open=true", "--format=json")
+	if err != nil {
+		return s, fmt.Errorf("billing accounts: %w\n%s", err, usefulOutput(r))
+	}
+	if strings.TrimSpace(r.Stdout) != "" {
+		if err = json.Unmarshal([]byte(r.Stdout), &s.Billing); err != nil {
+			return s, fmt.Errorf("billing accounts: invalid response: %w", err)
+		}
 	}
 
 	project := cfg.Project

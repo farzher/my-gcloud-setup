@@ -98,7 +98,7 @@ func (m model) render() string {
 	case screenAccount:
 		return m.renderAccount()
 	case screenBilling:
-		return m.header() + "\n\n" + titleStyle.Render("Billing") + "\n" + mutedStyle.Render(m.state.Account) + "\n\n" + button("Open billing") + "\n\n" + mutedStyle.Render("enter  r  q")
+		return m.renderBillingSetup()
 	case screenBillingPick:
 		return m.renderBilling()
 	case screenServer:
@@ -128,6 +128,27 @@ func (m model) renderAccount() string {
 	b.WriteString(choiceLine("Browser", m.accountPos == base) + "\n")
 	b.WriteString(choiceLine("QR code", m.accountPos == base+1) + "\n\n")
 	b.WriteString(mutedStyle.Render("↑/↓  enter  q"))
+	return b.String()
+}
+
+func (m model) renderBillingSetup() string {
+	var b strings.Builder
+	b.WriteString(m.header() + "\n\n" + titleStyle.Render("Billing") + "\n")
+	b.WriteString(accentStyle.Render(m.state.Account) + "\n\n")
+	b.WriteString("No billing account found.\n")
+	b.WriteString(mutedStyle.Render("Create one for this Google account.") + "\n")
+	b.WriteString(mutedStyle.Render("First-time Google Cloud setup happens there.") + "\n\n")
+	for i, label := range []string{"Copy setup link", "QR code", "Open browser"} {
+		b.WriteString(choiceLine(label, i == m.billingSetupPos) + "\n")
+	}
+	if m.statusText != "" {
+		b.WriteString("\n" + goodStyle.Render(m.statusText))
+	} else if m.busy {
+		b.WriteString("\n" + spinner(m.frame) + " checking billing")
+	} else {
+		b.WriteString("\n" + mutedStyle.Render("Waiting for billing…"))
+	}
+	b.WriteString("\n\n" + mutedStyle.Render("↑/↓  enter  r refresh  a account  q"))
 	return b.String()
 }
 

@@ -15,6 +15,15 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "__billing-qr":
+			if len(os.Args) < 3 {
+				os.Exit(2)
+			}
+			if err := runBillingQR(os.Args[2]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			return
 		case "__chatgpt-auth":
 			if len(os.Args) < 3 {
 				os.Exit(2)

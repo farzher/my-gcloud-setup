@@ -20,8 +20,7 @@ const (
 	adminEmail  = "stephenkamenar@gmail.com"
 	githubOwner = "farzher"
 
-	billingURL = "https://console.cloud.google.com/billing/create"
-	gcloudURL  = "https://cloud.google.com/sdk/docs/install"
+	gcloudURL = "https://cloud.google.com/sdk/docs/install"
 )
 
 type screen int
@@ -60,9 +59,10 @@ type model struct {
 	cfg   config
 	state cloudState
 
-	billingID  string
-	billingPos int
-	accountPos int
+	billingID       string
+	billingPos      int
+	billingSetupPos int
+	accountPos      int
 
 	otherVMs      []existingVM
 	otherVMCount  int
@@ -136,6 +136,12 @@ type renameDoneMsg struct {
 }
 
 type browserDoneMsg struct{ err error }
+
+type billingActionMsg struct {
+	status  string
+	refresh bool
+	err     error
+}
 
 var (
 	accent = lipgloss.Color("#C084FC")
