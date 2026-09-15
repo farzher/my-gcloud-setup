@@ -41,7 +41,7 @@ func ensureHTTPS(cfg config) (commandResult, error) {
 certbot --nginx --non-interactive --agree-tos --redirect --no-eff-email --email ` + shellQuote(adminEmail) + ` -d ` + shellQuote(domain) + `
 systemctl enable --now certbot.timer >/dev/null 2>&1 || true
 `
-	return runRemoteBash(cfg, 5*time.Minute, script)
+	return runRemoteScript(cfg, 5*time.Minute, script)
 }
 
 func verifyServer(cfg config) (commandResult, error) {
@@ -109,7 +109,7 @@ nginx -T 2>/dev/null | grep -Fq ` + shellQuote("ssl_certificate "+cert) + `
 	}
 	script += `printf 'ready\n'
 `
-	return runRemoteBash(cfg, 60*time.Second, script)
+	return runRemoteScript(cfg, 60*time.Second, script)
 }
 
 func runRemoteScript(cfg config, timeout time.Duration, script string) (commandResult, error) {
