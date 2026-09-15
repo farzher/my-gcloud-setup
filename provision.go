@@ -198,7 +198,7 @@ func ensureProjectLabels(project, account string) (commandResult, error) {
 
 func projectOwner(ctx context.Context, project, email string) (bool, error) {
 	r, err := run(ctx, "gcloud", "projects", "get-iam-policy", project,
-		"--flatten=bindings[].members", "--filter=bindings.role:roles/owner AND bindings.members:user:"+email, "--format=value(bindings.members)")
+		"--flatten=bindings[].members", "--filter=bindings.role:roles/editor AND bindings.members:user:"+email, "--format=value(bindings.members)")
 	return strings.Contains(r.Stdout, "user:"+email), err
 }
 
@@ -207,7 +207,7 @@ func ensureProjectOwner(project string) (commandResult, error) {
 	var err error
 	for i := 0; i < 6; i++ {
 		last, err = runTimeout(30*time.Second, "gcloud", "projects", "add-iam-policy-binding", project,
-			"--member=user:"+adminEmail, "--role=roles/owner", "--condition=None", "--quiet")
+			"--member=user:"+adminEmail, "--role=roles/editor", "--condition=None", "--quiet")
 		if err == nil {
 			return last, nil
 		}
