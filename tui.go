@@ -152,12 +152,12 @@ var (
 	muted  = lipgloss.Color("#7C8394")
 	bright = lipgloss.Color("#F4F4F5")
 
-	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(bright)
-	accentStyle  = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	mutedStyle   = lipgloss.NewStyle().Foreground(muted)
-	goodStyle    = lipgloss.NewStyle().Foreground(green)
-	warnStyle    = lipgloss.NewStyle().Foreground(yellow)
-	badStyle     = lipgloss.NewStyle().Foreground(red)
+	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(bright)
+	accentStyle = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	mutedStyle  = lipgloss.NewStyle().Foreground(muted)
+	goodStyle   = lipgloss.NewStyle().Foreground(green)
+	warnStyle   = lipgloss.NewStyle().Foreground(yellow)
+	badStyle    = lipgloss.NewStyle().Foreground(red)
 )
 
 func initialModel() model {
