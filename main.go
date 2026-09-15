@@ -37,8 +37,9 @@ func main() {
 		}
 	}
 
+	next := initialModel()
 	for {
-		final, err := tea.NewProgram(initialModel()).Run()
+		final, err := tea.NewProgram(next).Run()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "cloud:", err)
 			os.Exit(1)
@@ -53,5 +54,6 @@ func main() {
 			_, _ = fmt.Fscanln(os.Stdin)
 		}
 		configureConsole()
+		next = resumedModel(m)
 	}
 }
