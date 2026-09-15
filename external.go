@@ -66,7 +66,14 @@ func runExternalSession(action externalAction, cfg config) error {
 
 	if action == externalGateway && err == nil {
 		fmt.Println("\nStarting gateway service…")
-		serviceRemote := "sudo -n -i bash -lc " + shellQuote("set -e; loginctl enable-linger root; hermes gateway install; hermes gateway start; hermes gateway status")
+		serviceScript := "set -e; " +
+			"install -d /etc/systemd/system/hermes-gateway.service.d; " +
+			"printf '[Service]\\nMemoryHigh=360M\\nMemoryMax=480M\\n' >/etc/systemd/system/hermes-gateway.service.d/limits.conf; " +
+			"hermes gateway install --system --run-as-user root --force --start-now --start-on-login; " +
+			"systemctl daemon-reload; " +
+			"hermes gateway restart --system; " +
+			"hermes gateway status --system --full"
+		serviceRemote := "sudo -n -i bash -lc " + shellQuote(serviceScript)
 		service := exec.Command(ssh, host, serviceRemote)
 		service.Stdin, service.Stdout, service.Stderr = os.Stdin, os.Stdout, os.Stderr
 		err = service.Run()
