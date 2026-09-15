@@ -3,12 +3,22 @@ package main
 import (
 	tea "charm.land/bubbletea/v2"
 	"errors"
+	"strings"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+	case tea.PasteMsg:
+		if m.editingSite {
+			text := strings.TrimSpace(msg.Content)
+			if text != "" && len([]rune(m.siteInput+text)) <= 80 {
+				m.siteInput += text
+				m.siteError = ""
+			}
+		}
 		return m, nil
 	case tickMsg:
 		m.frame++
