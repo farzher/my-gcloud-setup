@@ -50,5 +50,5 @@ func lastSSHKey(s string) string {
 }
 
 func setupWeb(cfg config) (commandResult, error) {
-	return runRemoteBash(cfg, 10*time.Minute, buildWebSetupScript(cfg))
+	return runRemoteScript(cfg, 10*time.Minute, buildWebSetupScript(cfg))
 }
