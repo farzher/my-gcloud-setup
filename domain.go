@@ -24,7 +24,7 @@ func ensureDNS(cfg config) (commandResult, error) {
 		return ipResult, errors.New("static IP is missing")
 	}
 	script := `getent ahostsv4 ` + shellQuote(domain) + ` 2>/dev/null | awk '{print $1}' | grep -Fxq ` + shellQuote(ip)
-	r, err := runRemoteBash(cfg, 30*time.Second, script)
+	r, err := runRemoteScript(cfg, 30*time.Second, script)
 	if err != nil {
 		r.Stdout = strings.TrimSpace(r.Stdout + "\nSet A " + domain + " -> " + ip)
 		return mergeResult(ipResult, r), errDNSRequired
