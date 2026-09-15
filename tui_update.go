@@ -238,6 +238,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			return m, tea.Quit
 		}
+	case screenLocation:
+		switch k {
+		case "up", "k":
+			m.locationPos--
+			if m.locationPos < 0 {
+				m.locationPos = len(freeLocations) - 1
+			}
+		case "down", "j", "tab":
+			m.locationPos = (m.locationPos + 1) % len(freeLocations)
+		case "enter":
+			loc := freeLocations[m.locationPos]
+			m.cfg.setRegion(m.state.Account, loc.Region)
+			if err := saveConfig(m.cfg); err != nil {
+				return m.showError(screenLocation, err, err.Error())
+			}
+			return m, m.route()
+		case "a":
+			m.screen = screenAccount
+			m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
+		case "q":
+			return m, tea.Quit
+		}
 	case screenBillingPick:
 		switch k {
 		case "up", "k":

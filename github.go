@@ -91,7 +91,7 @@ func ensureGitHub(cfg config) (config, commandResult, error) {
 	}
 
 	pubResult, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+zone,
+		"--project="+cfg.Project, "--zone="+cfg.zone(),
 		"--command=sudo -n bash -lc 'mkdir -p /root/.ssh; chmod 700 /root/.ssh; test -f /root/.ssh/github-web || ssh-keygen -q -t ed25519 -N \"\" -C \"cloud-web\" -f /root/.ssh/github-web; cat /root/.ssh/github-web.pub'", "--quiet")
 	all = mergeResult(all, pubResult)
 	if err != nil {
@@ -152,7 +152,7 @@ func discoverServerRepo(cfg config) string {
 [ -d /website/app/.git ]
 git -C /website/app remote get-url origin`
 	r, err := runTimeout(30*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+zone,
+		"--project="+cfg.Project, "--zone="+cfg.zone(),
 		"--command=sudo -n bash -c "+shellQuote(remote), "--quiet")
 	if err != nil {
 		return ""

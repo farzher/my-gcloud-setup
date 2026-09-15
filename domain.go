@@ -16,7 +16,7 @@ func ensureDNS(cfg config) (commandResult, error) {
 	if cfg.Project == "" {
 		return commandResult{}, errors.New("project is not set")
 	}
-	ipResult, err := runTimeout(30*time.Second, "gcloud", "compute", "addresses", "describe", addressName, "--project="+cfg.Project, "--region="+region, "--format=value(address)")
+	ipResult, err := runTimeout(30*time.Second, "gcloud", "compute", "addresses", "describe", addressName, "--project="+cfg.Project, "--region="+cfg.region(), "--format=value(address)")
 	if err != nil {
 		return ipResult, err
 	}
@@ -117,7 +117,7 @@ func runRemoteScript(cfg config, timeout time.Duration, script string) (commandR
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+zone, "--command=sudo -n bash -s", "--quiet")
+		"--project="+cfg.Project, "--zone="+cfg.zone(), "--command=sudo -n bash -s", "--quiet")
 	cmd.Stdin = strings.NewReader(script)
 	return runExec(cmd)
 }
@@ -125,5 +125,5 @@ func runRemoteScript(cfg config, timeout time.Duration, script string) (commandR
 func runRemoteBash(cfg config, timeout time.Duration, script string) (commandResult, error) {
 	cmd := "sudo -n bash -c " + shellQuote(script)
 	return runTimeout(timeout, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+zone, "--command="+cmd, "--quiet")
+		"--project="+cfg.Project, "--zone="+cfg.zone(), "--command="+cmd, "--quiet")
 }

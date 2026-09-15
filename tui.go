@@ -9,8 +9,6 @@ import (
 const (
 	appName = "cloud"
 
-	region      = "us-east1"
-	zone        = "us-east1-b"
 	vmName      = "server"
 	networkName = "cloud-net"
 	subnetName  = "cloud-subnet"
@@ -31,6 +29,7 @@ const (
 	screenAccount
 	screenBilling
 	screenBillingPick
+	screenLocation
 	screenServer
 	screenConfirm
 	screenDetails
@@ -63,6 +62,7 @@ type model struct {
 	billingPos      int
 	billingSetupPos int
 	accountPos      int
+	locationPos     int
 
 	otherVMs      []existingVM
 	otherVMCount  int

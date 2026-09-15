@@ -200,6 +200,11 @@ func (m *model) route() tea.Cmd {
 		m.siteInput, m.siteError = "", ""
 		return nil
 	}
+	if m.cfg.regionFor(m.state.Account) == "" {
+		m.screen = screenLocation
+		m.locationPos = 0
+		return nil
+	}
 	if m.cfg.disabledFor(m.state.Account) {
 		m.steps = nil
 		return nil

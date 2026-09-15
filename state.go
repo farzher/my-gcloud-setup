@@ -11,6 +11,7 @@ type config struct {
 	Names    map[string]string `json:"names,omitempty"`
 	Domains  map[string]string `json:"domains,omitempty"`
 	Billing  map[string]string `json:"billing,omitempty"`
+	Regions  map[string]string `json:"regions,omitempty"`
 	Repos    map[string]string `json:"repos,omitempty"`
 	Disabled map[string]bool   `json:"disabled,omitempty"`
 	Account  string            `json:"-"`
@@ -25,6 +26,12 @@ func (c config) nameFor(account string) string { return c.Names[account] }
 func (c config) domainFor(account string) string { return c.Domains[account] }
 
 func (c config) billingFor(account string) string { return c.Billing[account] }
+
+func (c config) regionFor(account string) string { return c.Regions[account] }
+
+func (c config) region() string { return c.regionFor(c.Account) }
+
+func (c config) zone() string { return zoneForRegion(c.region()) }
 
 func (c config) repoFor(account string) string { return c.Repos[account] }
 
@@ -52,6 +59,13 @@ func (c *config) setBilling(account, value string) {
 		c.Billing = map[string]string{}
 	}
 	c.Billing[account] = value
+}
+
+func (c *config) setRegion(account, value string) {
+	if c.Regions == nil {
+		c.Regions = map[string]string{}
+	}
+	c.Regions[account] = value
 }
 
 func (c *config) setRepo(account, value string) {

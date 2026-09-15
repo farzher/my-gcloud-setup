@@ -123,13 +123,13 @@ func installHermes(cfg config) (commandResult, error) {
 
 func ensureChatGPT(cfg config) (commandResult, error) {
 	status, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+zone, "--command=sudo -n -i hermes auth status openai-codex", "--quiet")
+		"--project="+cfg.Project, "--zone="+cfg.zone(), "--command=sudo -n -i hermes auth status openai-codex", "--quiet")
 	if err != nil || !chatGPTLoggedIn(usefulOutput(status)) {
 		return status, errChatGPTAuthRequired
 	}
 	remote := `sudo -n -i bash -lc 'set -e; hermes config set model.provider openai-codex >/dev/null; hermes config set model.default ` + chatGPTModel + ` >/dev/null; hermes config set agent.reasoning_effort ` + chatGPTEffort + ` >/dev/null; hermes config unset model.base_url >/dev/null 2>&1 || true'`
 	configured, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+zone, "--command="+remote, "--quiet")
+		"--project="+cfg.Project, "--zone="+cfg.zone(), "--command="+remote, "--quiet")
 	return mergeResult(status, configured), err
 }
 

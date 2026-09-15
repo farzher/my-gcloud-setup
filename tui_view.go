@@ -101,6 +101,8 @@ func (m model) render() string {
 		return m.renderBillingSetup()
 	case screenBillingPick:
 		return m.renderBilling()
+	case screenLocation:
+		return m.renderLocation()
 	case screenServer:
 		return m.renderServer()
 	case screenConfirm:
@@ -149,6 +151,19 @@ func (m model) renderBillingSetup() string {
 		b.WriteString("\n" + mutedStyle.Render("Waiting for billing…"))
 	}
 	b.WriteString("\n\n" + mutedStyle.Render("↑/↓  enter  r refresh  a account  q"))
+	return b.String()
+}
+
+func (m model) renderLocation() string {
+	var b strings.Builder
+	b.WriteString(m.header() + "\n\n" + titleStyle.Render("Location") + "\n")
+	b.WriteString(accentStyle.Render(m.state.Account) + "\n\n")
+	b.WriteString(mutedStyle.Render("Choose a Free Tier e2-micro region.") + "\n\n")
+	for i, loc := range freeLocations {
+		b.WriteString(choiceLine(loc.Label+" · "+loc.Place, i == m.locationPos) + "\n")
+	}
+	b.WriteString("\n" + mutedStyle.Render("All three are Free Tier eligible."))
+	b.WriteString("\n\n" + mutedStyle.Render("↑/↓  enter  a account  q"))
 	return b.String()
 }
 

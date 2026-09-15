@@ -81,16 +81,20 @@ func detect(cfg config) (cloudState, error) {
 		}
 	}
 
-	if r, err = run(ctx, "gcloud", "compute", "instances", "describe", vmName, "--project="+project, "--zone="+zone, "--format=json"); err == nil && r.Stdout != "" {
+	if cfg.region() == "" {
+		return s, nil
+	}
+
+	if r, err = run(ctx, "gcloud", "compute", "instances", "describe", vmName, "--project="+project, "--zone="+cfg.zone(), "--format=json"); err == nil && r.Stdout != "" {
 		s.VMExists = true
 		_ = json.Unmarshal([]byte(r.Stdout), &s.Instance)
 	}
-	if r, err = run(ctx, "gcloud", "compute", "addresses", "describe", addressName, "--project="+project, "--region="+region, "--format=value(address)"); err == nil {
+	if r, err = run(ctx, "gcloud", "compute", "addresses", "describe", addressName, "--project="+project, "--region="+cfg.region(), "--format=value(address)"); err == nil {
 		s.StaticIP = firstLine(r.Stdout)
 	}
 	if s.VMExists && strings.EqualFold(s.Instance.Status, "RUNNING") {
 		probe, _ := runTimeout(35*time.Second, "gcloud", "compute", "ssh", vmName,
-			"--project="+project, "--zone="+zone, "--command="+remoteProbe(cfg, s.StaticIP), "--quiet")
+			"--project="+project, "--zone="+cfg.zone(), "--command="+remoteProbe(cfg, s.StaticIP), "--quiet")
 		for _, line := range nonEmptyLines(probe.Stdout) {
 			switch strings.TrimSpace(line) {
 			case "READY_SSH":

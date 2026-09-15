@@ -23,8 +23,8 @@ func ensureNetwork(cfg config) (commandResult, error) {
 			return all, e
 		}
 	}
-	if !gcloudExists(ctx, "compute", "networks", "subnets", "describe", subnetName, "--project="+cfg.Project, "--region="+region) {
-		r, e := run(ctx, "gcloud", "compute", "networks", "subnets", "create", subnetName, "--project="+cfg.Project, "--region="+region, "--network="+networkName, "--range=10.10.0.0/24", "--quiet")
+	if !gcloudExists(ctx, "compute", "networks", "subnets", "describe", subnetName, "--project="+cfg.Project, "--region="+cfg.region()) {
+		r, e := run(ctx, "gcloud", "compute", "networks", "subnets", "create", subnetName, "--project="+cfg.Project, "--region="+cfg.region(), "--network="+networkName, "--range=10.10.0.0/24", "--quiet")
 		all = mergeResult(all, r)
 		if e != nil {
 			return all, e
@@ -45,8 +45,8 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	var all commandResult
-	if !gcloudExists(ctx, "compute", "addresses", "describe", addressName, "--project="+cfg.Project, "--region="+region) {
-		r, e := run(ctx, "gcloud", "compute", "addresses", "create", addressName, "--project="+cfg.Project, "--region="+region, "--network-tier=PREMIUM", "--quiet")
+	if !gcloudExists(ctx, "compute", "addresses", "describe", addressName, "--project="+cfg.Project, "--region="+cfg.region()) {
+		r, e := run(ctx, "gcloud", "compute", "addresses", "create", addressName, "--project="+cfg.Project, "--region="+cfg.region(), "--network-tier=PREMIUM", "--quiet")
 		all = mergeResult(all, r)
 		if e != nil {
 			return all, "", e
@@ -54,7 +54,7 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 	}
 
 	addressResult, err := run(ctx, "gcloud", "compute", "addresses", "describe", addressName,
-		"--project="+cfg.Project, "--region="+region, "--format=json")
+		"--project="+cfg.Project, "--region="+cfg.region(), "--format=json")
 	all = mergeResult(all, addressResult)
 	if err != nil {
 		return all, "", err
@@ -72,7 +72,7 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 	}
 
 	instanceResult, instanceErr := run(ctx, "gcloud", "compute", "instances", "describe", vmName,
-		"--project="+cfg.Project, "--zone="+zone, "--format=json(networkInterfaces)")
+		"--project="+cfg.Project, "--zone="+cfg.zone(), "--format=json(networkInterfaces)")
 	if instanceErr != nil {
 		if looksNotFound(usefulOutput(instanceResult)) {
 			return all, ip, nil
@@ -121,7 +121,7 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 	hadAccess := len(nic.AccessConfigs) > 0
 	if hadAccess {
 		removed, removeErr := run(ctx, "gcloud", "compute", "instances", "delete-access-config", vmName,
-			"--project="+cfg.Project, "--zone="+zone, "--network-interface="+nicName, "--access-config-name="+accessName, "--quiet")
+			"--project="+cfg.Project, "--zone="+cfg.zone(), "--network-interface="+nicName, "--access-config-name="+accessName, "--quiet")
 		all = mergeResult(all, removed)
 		if removeErr != nil {
 			return all, ip, removeErr
@@ -129,7 +129,7 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 	}
 
 	assigned, assignErr := run(ctx, "gcloud", "compute", "instances", "add-access-config", vmName,
-		"--project="+cfg.Project, "--zone="+zone, "--network-interface="+nicName, "--access-config-name="+accessName,
+		"--project="+cfg.Project, "--zone="+cfg.zone(), "--network-interface="+nicName, "--access-config-name="+accessName,
 		"--address="+ip, "--network-tier=PREMIUM", "--quiet")
 	all = mergeResult(all, assigned)
 	if assignErr == nil {
@@ -138,7 +138,7 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 
 	if hadAccess {
 		fallback, _ := run(ctx, "gcloud", "compute", "instances", "add-access-config", vmName,
-			"--project="+cfg.Project, "--zone="+zone, "--network-interface="+nicName, "--access-config-name="+accessName,
+			"--project="+cfg.Project, "--zone="+cfg.zone(), "--network-interface="+nicName, "--access-config-name="+accessName,
 			"--network-tier=PREMIUM", "--quiet")
 		all = mergeResult(all, fallback)
 	}
@@ -148,11 +148,11 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 func ensureVM(cfg config) (commandResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
-	if gcloudExists(ctx, "compute", "instances", "describe", vmName, "--project="+cfg.Project, "--zone="+zone) {
-		return run(ctx, "gcloud", "compute", "instances", "describe", vmName, "--project="+cfg.Project, "--zone="+zone, "--format=value(status)")
+	if gcloudExists(ctx, "compute", "instances", "describe", vmName, "--project="+cfg.Project, "--zone="+cfg.zone()) {
+		return run(ctx, "gcloud", "compute", "instances", "describe", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--format=value(status)")
 	}
 	return run(ctx, "gcloud", "compute", "instances", "create", vmName,
-		"--project="+cfg.Project, "--zone="+zone, "--machine-type=e2-micro", "--image-family=debian-13", "--image-project=debian-cloud",
+		"--project="+cfg.Project, "--zone="+cfg.zone(), "--machine-type=e2-micro", "--image-family=debian-13", "--image-project=debian-cloud",
 		"--boot-disk-size=30GB", "--boot-disk-type=pd-standard", "--subnet="+subnetName, "--address="+addressName, "--network-tier=PREMIUM",
 		"--tags="+networkTag, "--no-service-account", "--no-scopes", "--no-deletion-protection", "--quiet")
 }
@@ -161,7 +161,7 @@ func waitForSSH(cfg config) (commandResult, error) {
 	var last commandResult
 	var err error
 	for i := 0; i < 30; i++ {
-		last, err = runTimeout(15*time.Second, "gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+zone, "--command=echo CLOUD_OK", "--quiet")
+		last, err = runTimeout(15*time.Second, "gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--command=echo CLOUD_OK", "--quiet")
 		if err == nil && strings.Contains(last.Stdout, "CLOUD_OK") {
 			return last, nil
 		}
@@ -191,7 +191,7 @@ func renameSiteCmd(cfg config, name, domain string) tea.Cmd {
 
 func lifecycleCmd(name string, cfg config, action string) tea.Cmd {
 	return func() tea.Msg {
-		r, e := runTimeout(3*time.Minute, "gcloud", "compute", "instances", action, vmName, "--project="+cfg.Project, "--zone="+zone, "--quiet")
+		r, e := runTimeout(3*time.Minute, "gcloud", "compute", "instances", action, vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--quiet")
 		return actionDoneMsg{name, cfg, usefulOutput(r), e}
 	}
 }
@@ -200,7 +200,7 @@ func rebuildCmd(cfg config, billingID string) tea.Cmd {
 	return func() tea.Msg {
 		var all commandResult
 		statusResult, err := runTimeout(30*time.Second, "gcloud", "compute", "instances", "describe", vmName,
-			"--project="+cfg.Project, "--zone="+zone, "--format=value(status)")
+			"--project="+cfg.Project, "--zone="+cfg.zone(), "--format=value(status)")
 		all = mergeResult(all, statusResult)
 		if err != nil {
 			if looksNotFound(usefulOutput(statusResult)) {
@@ -215,7 +215,7 @@ func rebuildCmd(cfg config, billingID string) tea.Cmd {
 		case "RUNNING":
 		case "TERMINATED", "STOPPED":
 			start, startErr := runTimeout(3*time.Minute, "gcloud", "compute", "instances", "start", vmName,
-				"--project="+cfg.Project, "--zone="+zone, "--quiet")
+				"--project="+cfg.Project, "--zone="+cfg.zone(), "--quiet")
 			all = mergeResult(all, start)
 			if startErr != nil {
 				return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), startErr}
@@ -224,7 +224,7 @@ func rebuildCmd(cfg config, billingID string) tea.Cmd {
 			ssh, sshErr := waitForSSH(cfg)
 			all = mergeResult(all, ssh)
 			if sshErr != nil {
-				_, _ = runTimeout(3*time.Minute, "gcloud", "compute", "instances", "stop", vmName, "--project="+cfg.Project, "--zone="+zone, "--quiet")
+				_, _ = runTimeout(3*time.Minute, "gcloud", "compute", "instances", "stop", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--quiet")
 				return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), fmt.Errorf("cannot back up before rebuild: %w", sshErr)}
 			}
 		default:
@@ -235,18 +235,18 @@ func rebuildCmd(cfg config, billingID string) tea.Cmd {
 		all = mergeResult(all, backup)
 		if backupErr != nil {
 			if started {
-				stop, _ := runTimeout(3*time.Minute, "gcloud", "compute", "instances", "stop", vmName, "--project="+cfg.Project, "--zone="+zone, "--quiet")
+				stop, _ := runTimeout(3*time.Minute, "gcloud", "compute", "instances", "stop", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--quiet")
 				all = mergeResult(all, stop)
 			}
 			return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), fmt.Errorf("pre-rebuild backup failed: %w", backupErr)}
 		}
 
 		deleted, deleteErr := runTimeout(4*time.Minute, "gcloud", "compute", "instances", "delete", vmName,
-			"--project="+cfg.Project, "--zone="+zone, "--delete-disks=all", "--quiet")
+			"--project="+cfg.Project, "--zone="+cfg.zone(), "--delete-disks=all", "--quiet")
 		all = mergeResult(all, deleted)
 		if deleteErr != nil {
 			if started {
-				stop, _ := runTimeout(3*time.Minute, "gcloud", "compute", "instances", "stop", vmName, "--project="+cfg.Project, "--zone="+zone, "--quiet")
+				stop, _ := runTimeout(3*time.Minute, "gcloud", "compute", "instances", "stop", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--quiet")
 				all = mergeResult(all, stop)
 			}
 			return actionDoneMsg{"Rebuild", cfg, usefulOutput(all), deleteErr}
@@ -260,13 +260,13 @@ func destroyCmd(cfg config, releaseIP bool) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		var all commandResult
-		r, e := run(ctx, "gcloud", "compute", "instances", "delete", vmName, "--project="+cfg.Project, "--zone="+zone, "--delete-disks=all", "--quiet")
+		r, e := run(ctx, "gcloud", "compute", "instances", "delete", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--delete-disks=all", "--quiet")
 		all = mergeResult(all, r)
 		if e != nil && !looksNotFound(all.Stderr) {
 			return actionDoneMsg{"Destroy", cfg, usefulOutput(all), e}
 		}
 		if releaseIP {
-			r, e = run(ctx, "gcloud", "compute", "addresses", "delete", addressName, "--project="+cfg.Project, "--region="+region, "--quiet")
+			r, e = run(ctx, "gcloud", "compute", "addresses", "delete", addressName, "--project="+cfg.Project, "--region="+cfg.region(), "--quiet")
 			all = mergeResult(all, r)
 			if e != nil && !looksNotFound(all.Stderr) {
 				return actionDoneMsg{"Destroy", cfg, usefulOutput(all), e}

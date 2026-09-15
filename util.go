@@ -241,7 +241,7 @@ func configPath() string {
 }
 
 func loadConfig() config {
-	c := config{Projects: map[string]string{}, Names: map[string]string{}, Domains: map[string]string{}, Billing: map[string]string{}, Repos: map[string]string{}, Disabled: map[string]bool{}}
+	c := config{Projects: map[string]string{}, Names: map[string]string{}, Domains: map[string]string{}, Billing: map[string]string{}, Regions: map[string]string{}, Repos: map[string]string{}, Disabled: map[string]bool{}}
 	if data, e := os.ReadFile(configPath()); e == nil {
 		_ = json.Unmarshal(data, &c)
 	}
@@ -256,6 +256,9 @@ func loadConfig() config {
 	}
 	if c.Billing == nil {
 		c.Billing = map[string]string{}
+	}
+	if c.Regions == nil {
+		c.Regions = map[string]string{}
 	}
 	if c.Repos == nil {
 		c.Repos = map[string]string{}

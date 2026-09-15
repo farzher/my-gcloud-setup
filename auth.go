@@ -50,17 +50,17 @@ func githubAuthCmd() tea.Cmd {
 }
 
 func remoteSSHCmd(cfg config) tea.Cmd {
-	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+zone)
+	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+cfg.zone())
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return externalDoneMsg{err} })
 }
 func remoteHermesCmd(cfg config) tea.Cmd {
 	remote := `exec sudo -n -i bash -lc 'cd /website/app 2>/dev/null || cd /root; exec hermes'`
-	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+zone, "--command="+remote, "--", "-t")
+	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--command="+remote, "--", "-t")
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return externalDoneMsg{err} })
 }
 func remoteGatewayCmd(cfg config) tea.Cmd {
 	remote := `exec sudo -n -i hermes gateway setup`
-	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+zone, "--command="+remote, "--", "-t")
+	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--command="+remote, "--", "-t")
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return externalDoneMsg{err} })
 }
 
@@ -115,6 +115,14 @@ func runChatGPTAuth(project string) error {
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, "Use the code shown below.")
 	fmt.Fprintln(os.Stdout)
+	zoneResult, err := runTimeout(30*time.Second, "gcloud", "compute", "instances", "list", "--project="+project, "--filter=name="+vmName, "--format=value(zone.basename())")
+	if err != nil {
+		return fmt.Errorf("find VM zone: %w", err)
+	}
+	zone := firstLine(zoneResult.Stdout)
+	if zone == "" {
+		return fmt.Errorf("VM zone not found")
+	}
 	cmd := exec.Command("gcloud", "compute", "ssh", vmName,
 		"--project="+project, "--zone="+zone,
 		"--command=exec sudo -n -i hermes auth add openai-codex", "--", "-t")
