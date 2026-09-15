@@ -146,11 +146,6 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 	if cfg.Project != "" {
 		r, err := runTimeout(30*time.Second, "gcloud", "projects", "describe", cfg.Project, "--format=value(projectId)")
 		if err == nil {
-			labels, le := ensureProjectLabels(cfg.Project, cfg.Account)
-			r = mergeResult(r, labels)
-			if le != nil {
-				return cfg, "", r, le
-			}
 			o, oe := ensureProjectOwner(cfg.Project)
 			return cfg, cfg.Project, mergeResult(r, o), oe
 		}
@@ -192,8 +187,12 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 }
 
 func ensureProjectLabels(project, account string) (commandResult, error) {
-	return runTimeout(45*time.Second, "gcloud", "projects", "update", project,
-		"--update-labels=cloud-charm=managed,cloud_account="+accountHash(account), "--quiet")
+	labels := "--update-labels=cloud-charm=managed,cloud_account=" + accountHash(account)
+	r, err := runTimeout(45*time.Second, "gcloud", "projects", "update", project, labels, "--quiet")
+	if err == nil || !strings.Contains(strings.ToLower(usefulOutput(r)), "unrecognized arguments") {
+		return r, err
+	}
+	return runTimeout(45*time.Second, "gcloud", "alpha", "projects", "update", project, labels, "--quiet")
 }
 
 func projectOwner(ctx context.Context, project, email string) (bool, error) {
