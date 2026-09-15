@@ -119,22 +119,11 @@ func (m model) updateServer(k string) (tea.Model, tea.Cmd) {
 				if err := saveConfig(m.cfg); err != nil {
 					return m.showError(screenServer, err, err.Error())
 				}
-				m.steps[m.stepIndex].State = 2
-				m.steps[m.stepIndex].Detail = "skip"
-				if m.stepIndex+1 < len(m.steps) && m.steps[m.stepIndex+1].Name == "HTTPS" {
-					m.steps[m.stepIndex+1].State = 2
-					m.steps[m.stepIndex+1].Detail = "skip"
-					m.stepIndex++
-				}
-				m.stepIndex++
-				m.lastErr, m.lastOutput, m.lastCommand = nil, "", ""
-				if m.stepIndex >= len(m.steps) {
-					m.busy = true
-					return m, detectCmd(m.cfg)
-				}
-				m.steps[m.stepIndex].State = 1
-				m.busy = true
-				return m, runStepCmd(m.stepIndex, m.cfg, m.billingID)
+				// Web was provisioned while a domain was configured. Re-run it with
+				// the domain cleared so nginx and managed project context match the
+				// configuration that Ready verifies.
+				m.startProvisionAt(11)
+				return m, runStepCmd(11, m.cfg, m.billingID)
 			}
 		case "d":
 			m.returnScreen = screenServer
