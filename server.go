@@ -91,13 +91,14 @@ su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='root'\"" | g
 su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='web'\"" | grep -q 1 || su - postgres -c "createdb -O root web"
 
 # cloud runs the Hermes gateway as a system service using root's managed
-# Hermes profile. Pre-create its drop-in so setup picks up the VM limits.
+# Hermes profile. Pre-create its drop-in so setup uses that profile and the VM limits.
 mkdir -p /etc/systemd/system/hermes-gateway.service.d
-cat >/etc/systemd/system/hermes-gateway.service.d/limits.conf <<'LIMITS'
+cat >/etc/systemd/system/hermes-gateway.service.d/cloud.conf <<'GATEWAY'
 [Service]
+Environment="HERMES_HOME=/root/.hermes"
 MemoryHigh=360M
 MemoryMax=480M
-LIMITS
+GATEWAY
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*
