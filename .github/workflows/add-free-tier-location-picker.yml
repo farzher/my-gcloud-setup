@@ -101,12 +101,26 @@ jobs:
           '''\tif strings.TrimSpace(m.cfg.nameFor(m.state.Account)) == "" {\n\t\tm.editingSite = true\n\t\tm.siteInput, m.siteError = "", ""\n\t\treturn nil\n\t}\n\tif m.cfg.disabledFor(m.state.Account) {\n''',
           '''\tif strings.TrimSpace(m.cfg.nameFor(m.state.Account)) == "" {\n\t\tm.editingSite = true\n\t\tm.siteInput, m.siteError = "", ""\n\t\treturn nil\n\t}\n\tif m.cfg.regionFor(m.state.Account) == "" {\n\t\tm.screen = screenLocation\n\t\tm.locationPos = 0\n\t\treturn nil\n\t}\n\tif m.cfg.disabledFor(m.state.Account) {\n''')
 
+          # Convert regional/zonal gcloud commands to the selected account's location.
           for p in Path(".").glob("*.go"):
               s = p.read_text()
               s = s.replace('"--region="+region', '"--region="+cfg.region()')
-              s = s.replace('"--zone="+zone', '"--zone="+cfg.zone()')
+              if p.name != "auth.go":
+                  s = s.replace('"--zone="+zone', '"--zone="+cfg.zone()')
               p.write_text(s)
 
+          # Interactive SSH helpers have cfg; the detached ChatGPT helper discovers its VM zone.
+          p = Path("auth.go")
+          s = p.read_text()
+          assert s.count('"--zone="+zone') == 4
+          s = s.replace('"--zone="+zone', '"--zone="+cfg.zone()', 3)
+          old = '''\tfmt.Fprintln(os.Stdout, "Use the code shown below.")\n\tfmt.Fprintln(os.Stdout)\n\tcmd := exec.Command("gcloud", "compute", "ssh", vmName,\n'''
+          new = '''\tfmt.Fprintln(os.Stdout, "Use the code shown below.")\n\tfmt.Fprintln(os.Stdout)\n\tzoneResult, err := runTimeout(30*time.Second, "gcloud", "compute", "instances", "list", "--project="+project, "--filter=name="+vmName, "--format=value(zone.basename())")\n\tif err != nil {\n\t\treturn fmt.Errorf("find VM zone: %w", err)\n\t}\n\tzone := firstLine(zoneResult.Stdout)\n\tif zone == "" {\n\t\treturn fmt.Errorf("VM zone not found")\n\t}\n\tcmd := exec.Command("gcloud", "compute", "ssh", vmName,\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # Detection should not probe regional resources until a location is chosen.
           p = Path("detect.go")
           s = p.read_text()
           marker = '''\tif r, err = run(ctx, "gcloud", "compute", "instances", "describe", vmName, "--project="+project, "--zone="+cfg.zone(), "--format=json"); err == nil && r.Stdout != "" {\n'''
@@ -117,7 +131,9 @@ jobs:
           for p in Path(".").glob("*.go"):
               s = p.read_text()
               assert '"--region="+region' not in s, p
-              assert '"--zone="+zone' not in s, p
+              if p.name != "auth.go":
+                  assert '"--zone="+zone' not in s, p
+          assert Path("auth.go").read_text().count('"--zone="+zone') == 1
 
       - name: Format and verify
         run: |
