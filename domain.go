@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -114,12 +115,31 @@ nginx -T 2>/dev/null | grep -Fq ` + shellQuote("ssl_certificate "+cert) + `
 }
 
 func runRemoteScript(cfg config, timeout time.Duration, script string) (commandResult, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+cfg.zone(), "--command=sudo -n bash -s", "--quiet")
-	cmd.Stdin = strings.NewReader(script)
-	return runExec(cmd)
+	f, err := os.CreateTemp(".", ".cloud-script-*.sh")
+	if err != nil {
+		return commandResult{}, err
+	}
+	local := f.Name()
+	defer os.Remove(local)
+	if _, err = f.WriteString(script); err != nil {
+		_ = f.Close()
+		return commandResult{}, err
+	}
+	if err = f.Close(); err != nil {
+		return commandResult{}, err
+	}
+
+	remote := "/tmp/cloud-script-" + randomHex(10) + ".sh"
+	copied, err := runTimeout(2*time.Minute, "gcloud", "compute", "scp", local, vmName+":"+remote,
+		"--project="+cfg.Project, "--zone="+cfg.zone(), "--quiet")
+	if err != nil {
+		return copied, err
+	}
+
+	command := "sudo -n bash " + shellQuote(remote) + "; code=$?; rm -f " + shellQuote(remote) + "; exit $code"
+	executed, err := runTimeout(timeout, "gcloud", "compute", "ssh", vmName,
+		"--project="+cfg.Project, "--zone="+cfg.zone(), "--command="+command, "--quiet")
+	return mergeResult(copied, executed), err
 }
 
 func runRemoteBash(cfg config, timeout time.Duration, script string) (commandResult, error) {
