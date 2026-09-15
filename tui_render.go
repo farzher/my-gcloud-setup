@@ -73,10 +73,12 @@ func (m model) renderServer() string {
 		}
 		if !m.busy && m.stepIndex < len(m.steps) && m.steps[m.stepIndex].State == 3 {
 			b.WriteString("\n" + badStyle.Render(shortError(m.lastErr)))
+			hint := "r retry  d details  q"
 			if errors.Is(m.lastErr, errDNSRequired) {
 				b.WriteString("\n" + warnStyle.Render("A "+m.cfg.domainFor(m.state.Account)+" → "+m.state.StaticIP))
+				hint = "r retry  s skip domain  d details  q"
 			}
-			b.WriteString("\n\n" + mutedStyle.Render("r retry  d details  q"))
+			b.WriteString("\n\n" + mutedStyle.Render(hint))
 		}
 		return b.String()
 	}
