@@ -2,5 +2,5 @@
 
 package main
 
-func configureConsole() {}
+func configureConsole()  {}
 func flushConsoleInput() {}
