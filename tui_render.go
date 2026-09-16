@@ -30,6 +30,8 @@ func (m model) renderServer() string {
 		b.WriteString("\n\n" + mutedStyle.Render("enter"))
 		if m.cfg.Project != "" {
 			b.WriteString(mutedStyle.Render("  esc"))
+		} else {
+			b.WriteString(mutedStyle.Render("  esc account"))
 		}
 		return b.String()
 	}
