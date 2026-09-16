@@ -44,19 +44,21 @@ func (m model) activateMenu() (tea.Model, tea.Cmd) {
 	case "Add domain", "Domain":
 		m.editingDomain = true
 		m.domainInput = m.cfg.domainFor(m.state.Account)
+		m.domainCursor = len([]rune(m.domainInput))
 		m.domainError = ""
 	case "Enable HTTPS":
 		if m.cfg.domainFor(m.state.Account) == "" {
 			m.editingDomain = true
 			m.domainInput, m.domainError = "", ""
+			m.domainCursor = 0
 			return m, nil
 		}
 		m.cfg.setHTTPSDeferred(m.state.Account, false)
 		if err := saveConfig(m.cfg); err != nil {
 			return m.showError(screenServer, err, err.Error())
 		}
-		m.startProvisionAt(12)
-		return m, runStepCmd(12, m.cfg, m.billingID)
+		m.startProvisionAt(11)
+		return m, runStepCmd(11, m.cfg, m.billingID)
 	case "Restart":
 		m.busy, m.statusText = true, "Restarting"
 		return m, lifecycleCmd("Restart", m.cfg, "reset")
