@@ -131,12 +131,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastOutput = msg.err.Error()
 		}
 		return m, detectCmd(m.cfg)
-	case externalDoneMsg:
-		m.busy = true
-		if msg.err != nil {
-			return m.showError(screenServer, msg.err, msg.err.Error())
-		}
-		return m, detectCmd(m.cfg)
 	case actionDoneMsg:
 		m.busy = false
 		m.cfg = msg.cfg
