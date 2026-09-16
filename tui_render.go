@@ -57,6 +57,19 @@ func (m model) renderServer() string {
 		return b.String()
 	}
 
+	if m.state.VMExists && len(m.steps) == 0 && strings.EqualFold(m.state.Instance.Status, "RUNNING") {
+		if idx := firstMissingStep(m.state, m.cfg); idx >= 0 {
+			steps := makeSteps(m.cfg.domainFor(m.state.Account) != "")
+			b.WriteString(warnStyle.Render("Setup incomplete"))
+			if idx < len(steps) {
+				b.WriteString("  " + mutedStyle.Render(steps[idx].Name))
+			}
+			b.WriteString("\n\n" + button("Continue setup"))
+			b.WriteString("\n\n" + mutedStyle.Render("enter  a account  r refresh  q"))
+			return b.String()
+		}
+	}
+
 	if len(m.steps) > 0 {
 		for _, s := range m.steps {
 			icon := mutedStyle.Render("·")
