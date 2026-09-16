@@ -14,13 +14,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		text := strings.TrimSpace(msg.Content)
 		if m.editingDomain {
-			if text != "" && len([]rune(m.domainInput+text)) <= 253 {
-				m.domainInput += text
+			var changed bool
+			m.domainInput, m.domainCursor, changed = insertSingleLine(m.domainInput, m.domainCursor, text, 253)
+			if changed {
 				m.domainError = ""
 			}
 		} else if m.editingSite {
-			if text != "" && len([]rune(m.siteInput+text)) <= 80 {
-				m.siteInput += text
+			var changed bool
+			m.siteInput, m.siteCursor, changed = insertSingleLine(m.siteInput, m.siteCursor, text, 80)
+			if changed {
 				m.siteError = ""
 			}
 		}
@@ -175,6 +177,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.cfg = msg.cfg
 		m.editingSite, m.siteInput, m.siteError = false, "", ""
+		m.siteCursor = 0
 		m.busy = true
 		return m, detectCmd(m.cfg)
 	case browserDoneMsg:

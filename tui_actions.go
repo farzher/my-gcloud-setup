@@ -4,11 +4,91 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"errors"
 	"strings"
+	"unicode"
 )
 
+func editSingleLine(value string, cursor int, key tea.KeyPressMsg, maxLen int) (string, int, bool) {
+	r := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(r) {
+		cursor = len(r)
+	}
+
+	switch key.String() {
+	case "left":
+		if cursor > 0 {
+			cursor--
+		}
+		return value, cursor, false
+	case "right":
+		if cursor < len(r) {
+			cursor++
+		}
+		return value, cursor, false
+	case "home":
+		return value, 0, false
+	case "end":
+		return value, len(r), false
+	case "backspace":
+		if cursor == 0 {
+			return value, cursor, false
+		}
+		r = append(r[:cursor-1], r[cursor:]...)
+		return string(r), cursor - 1, true
+	case "delete":
+		if cursor >= len(r) {
+			return value, cursor, false
+		}
+		r = append(r[:cursor], r[cursor+1:]...)
+		return string(r), cursor, true
+	}
+
+	text := key.Key().Text
+	if text == "" {
+		return value, cursor, false
+	}
+	for _, c := range text {
+		if unicode.IsControl(c) {
+			return value, cursor, false
+		}
+	}
+	insert := []rune(text)
+	if len(r)+len(insert) > maxLen {
+		return value, cursor, false
+	}
+	r = append(r, make([]rune, len(insert))...)
+	copy(r[cursor+len(insert):], r[cursor:len(r)-len(insert)])
+	copy(r[cursor:], insert)
+	return string(r), cursor + len(insert), true
+}
+
+func insertSingleLine(value string, cursor int, text string, maxLen int) (string, int, bool) {
+	for _, c := range text {
+		if unicode.IsControl(c) {
+			return value, cursor, false
+		}
+	}
+	r := []rune(value)
+	insert := []rune(text)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(r) {
+		cursor = len(r)
+	}
+	if len(r)+len(insert) > maxLen {
+		return value, cursor, false
+	}
+	r = append(r, make([]rune, len(insert))...)
+	copy(r[cursor+len(insert):], r[cursor:len(r)-len(insert)])
+	copy(r[cursor:], insert)
+	return string(r), cursor + len(insert), len(insert) > 0
+}
+
 func (m model) updateSiteInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	k := key.String()
-	switch k {
+	switch key.String() {
 	case "enter":
 		name, domain, err := parseSite(m.siteInput)
 		if err != nil {
@@ -23,37 +103,31 @@ func (m model) updateSiteInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m.showError(screenServer, err, err.Error())
 			}
 			m.editingSite = false
+			m.siteCursor = 0
 			return m, m.route()
 		}
 		m.busy = true
 		return m, renameSiteCmd(m.cfg, name, domain)
 	case "esc":
 		m.editingSite, m.siteInput, m.siteError = false, "", ""
+		m.siteCursor = 0
 		if m.cfg.Project == "" {
 			m.screen = screenAccount
 			m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
 		}
 		return m, nil
-	case "backspace":
-		r := []rune(m.siteInput)
-		if len(r) > 0 {
-			m.siteInput = string(r[:len(r)-1])
-		}
-		m.siteError = ""
-		return m, nil
-	default:
-		text := key.Key().Text
-		if text != "" && len([]rune(m.siteInput+text)) <= 80 {
-			m.siteInput += text
-			m.siteError = ""
-		}
-		return m, nil
 	}
+
+	var changed bool
+	m.siteInput, m.siteCursor, changed = editSingleLine(m.siteInput, m.siteCursor, key, 80)
+	if changed {
+		m.siteError = ""
+	}
+	return m, nil
 }
 
 func (m model) updateDomainInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	k := key.String()
-	switch k {
+	switch key.String() {
 	case "enter":
 		_, domain, err := parseSite(m.domainInput)
 		if err != nil || domain == "" {
@@ -66,26 +140,21 @@ func (m model) updateDomainInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m.showError(screenServer, err, err.Error())
 		}
 		m.editingDomain, m.domainInput, m.domainError = false, "", ""
+		m.domainCursor = 0
 		m.startProvisionAt(11)
 		return m, runStepCmd(11, m.cfg, m.billingID)
 	case "esc":
 		m.editingDomain, m.domainInput, m.domainError = false, "", ""
-		return m, nil
-	case "backspace":
-		r := []rune(m.domainInput)
-		if len(r) > 0 {
-			m.domainInput = string(r[:len(r)-1])
-		}
-		m.domainError = ""
-		return m, nil
-	default:
-		text := key.Key().Text
-		if text != "" && len([]rune(m.domainInput+text)) <= 253 {
-			m.domainInput += text
-			m.domainError = ""
-		}
+		m.domainCursor = 0
 		return m, nil
 	}
+
+	var changed bool
+	m.domainInput, m.domainCursor, changed = editSingleLine(m.domainInput, m.domainCursor, key, 253)
+	if changed {
+		m.domainError = ""
+	}
+	return m, nil
 }
 
 func (m model) updateAccount(k string) (tea.Model, tea.Cmd) {
@@ -269,6 +338,7 @@ func (m *model) route() tea.Cmd {
 	if strings.TrimSpace(m.cfg.nameFor(m.state.Account)) == "" {
 		m.editingSite = true
 		m.siteInput, m.siteError = "", ""
+		m.siteCursor = 0
 		return nil
 	}
 	if m.cfg.regionFor(m.state.Account) == "" {
