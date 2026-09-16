@@ -49,21 +49,6 @@ func githubAuthCmd() tea.Cmd {
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return authDoneMsg{err} })
 }
 
-func remoteSSHCmd(cfg config) tea.Cmd {
-	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+cfg.zone())
-	return tea.ExecProcess(cmd, func(err error) tea.Msg { return externalDoneMsg{err} })
-}
-func remoteHermesCmd(cfg config) tea.Cmd {
-	remote := `exec sudo -n -i bash -lc 'cd /website/app 2>/dev/null || cd /root; exec hermes'`
-	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--command="+remote, "--", "-t")
-	return tea.ExecProcess(cmd, func(err error) tea.Msg { return externalDoneMsg{err} })
-}
-func remoteGatewayCmd(cfg config) tea.Cmd {
-	remote := `exec sudo -n -i hermes gateway setup`
-	cmd := exec.Command("gcloud", "compute", "ssh", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--command="+remote, "--", "-t")
-	return tea.ExecProcess(cmd, func(err error) tea.Msg { return externalDoneMsg{err} })
-}
-
 func openBrowserCmd(url string) tea.Cmd {
 	return func() tea.Msg { return browserDoneMsg{openBrowser(url)} }
 }
@@ -72,6 +57,10 @@ func openBrowser(url string) error {
 		return fmt.Errorf("open this URL: %s", url)
 	}
 	return exec.Command("cmd", "/c", "start", "", url).Start()
+}
+
+func cloudConsoleURL(project string) string {
+	return "https://console.cloud.google.com/home/dashboard?project=" + project
 }
 
 func runGoogleQRAuth() error {
