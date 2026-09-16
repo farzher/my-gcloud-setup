@@ -70,13 +70,13 @@ func detect(cfg config) (cloudState, error) {
 				return s, fmt.Errorf("project labels: %w", labelErr)
 			}
 		}
-		owner, ownerErr := projectOwner(ctx, project, adminEmail)
-		if ownerErr != nil {
-			return s, fmt.Errorf("owner check: %w", ownerErr)
+		editor, editorErr := projectEditor(ctx, project, adminEmail)
+		if editorErr != nil {
+			return s, fmt.Errorf("editor access check: %w", editorErr)
 		}
-		if !owner {
-			if _, ownerErr = ensureProjectOwner(project); ownerErr != nil {
-				return s, fmt.Errorf("owner setup: %w", ownerErr)
+		if !editor {
+			if _, editorErr = ensureProjectEditor(project); editorErr != nil {
+				return s, fmt.Errorf("editor access setup: %w", editorErr)
 			}
 		}
 	}
@@ -92,10 +92,22 @@ func detect(cfg config) (cloudState, error) {
 	if r, err = run(ctx, "gcloud", "compute", "addresses", "describe", addressName, "--project="+project, "--region="+cfg.region(), "--format=value(address)"); err == nil {
 		s.StaticIP = firstLine(r.Stdout)
 	}
+
+	var auditDone chan []string
+	if s.VMExists {
+		auditDone = make(chan []string, 1)
+		go func() { auditDone <- auditFreeTier(ctx, cfg, s.Instance, s.StaticIP) }()
+	}
+
 	if s.VMExists && strings.EqualFold(s.Instance.Status, "RUNNING") {
 		probe, _ := runRemoteScript(cfg, 35*time.Second, remoteProbe(cfg, s.StaticIP))
 		for _, line := range nonEmptyLines(probe.Stdout) {
-			switch strings.TrimSpace(line) {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "BACKUP_TIME ") {
+				s.BackupTime = strings.TrimSpace(strings.TrimPrefix(line, "BACKUP_TIME "))
+				continue
+			}
+			switch line {
 			case "READY_SSH":
 				s.SSHReady = true
 			case "READY_SYSTEM":
@@ -116,6 +128,9 @@ func detect(cfg config) (cloudState, error) {
 		}
 		domainOK := cfg.domainFor(s.Account) == "" || (s.DNSReady && s.HTTPSReady)
 		s.VerifyReady = s.SSHReady && s.SystemReady && s.HermesReady && s.ChatGPTReady && s.GitHubReady && s.WebReady && domainOK
+	}
+	if auditDone != nil {
+		s.CostWarnings = <-auditDone
 	}
 	return s, nil
 }
@@ -140,6 +155,7 @@ if command -v hermes >/dev/null && hermes auth status openai-codex 2>/dev/null |
 `
 	}
 	script += `if [ ! -d /website/.git ] && [ -d /website/data ] && [ -x /website/app/ops/deploy.sh ] && [ -x /website/app/ops/ship.sh ] && [ -x /website/app/ops/status.sh ] && [ -x /website/app/ops/backup.sh ] && [ -x /website/app/ops/restore.sh ] && [ -s /website/app/AGENTS.md ] && [ -f /var/lib/website/initialized ] && [ -x /usr/local/bin/deploy-web ] && [ -x /usr/local/bin/ship-web ] && [ -x /usr/local/bin/server-status ] && [ -x /usr/local/bin/backup-web ] && [ -x /usr/local/bin/restore-web ] && systemctl is-enabled --quiet web.service && systemctl is-active --quiet web.service && systemctl is-enabled --quiet web-backup.timer && systemctl is-active --quiet web-backup.timer && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql && [ "$(sha256sum /website/app/ops/deploy.sh 2>/dev/null | awk '{print $1}')" = "` + deployHash + `" ] && [ "$(sha256sum /website/app/ops/ship.sh 2>/dev/null | awk '{print $1}')" = "` + shipHash + `" ] && [ "$(sha256sum /website/app/ops/status.sh 2>/dev/null | awk '{print $1}')" = "` + statusHash + `" ] && [ "$(sha256sum /website/app/ops/backup.sh 2>/dev/null | awk '{print $1}')" = "` + backupHash + `" ] && [ "$(sha256sum /website/app/ops/restore.sh 2>/dev/null | awk '{print $1}')" = "` + restoreHash + `" ] && [ "$(sha256sum /website/app/AGENTS.md 2>/dev/null | awk '{print $1}')" = "` + contextHash + `" ] && nginx -t >/dev/null 2>&1 && nginx -T 2>/dev/null | grep -Fq 'proxy_pass http://127.0.0.1:3000;' && /usr/local/bin/server-status >/dev/null 2>&1; then echo READY_WEB; fi
+if [ -s /var/lib/website/last-backup-success ]; then printf 'BACKUP_TIME %s\n' "$(cat /var/lib/website/last-backup-success)"; fi
 `
 	if domain == "" {
 		script += "echo READY_DNS\necho READY_HTTPS\n"
