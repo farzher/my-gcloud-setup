@@ -146,7 +146,7 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 	if cfg.Project != "" {
 		r, err := runTimeout(30*time.Second, "gcloud", "projects", "describe", cfg.Project, "--format=value(projectId)")
 		if err == nil {
-			o, oe := ensureProjectOwner(cfg.Project)
+			o, oe := ensureProjectEditor(cfg.Project)
 			return cfg, cfg.Project, mergeResult(r, o), oe
 		}
 		if !looksNotFound(usefulOutput(r)) {
@@ -175,7 +175,7 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 			if err = saveConfig(cfg); err != nil {
 				return cfg, "", r, err
 			}
-			o, oe := ensureProjectOwner(id)
+			o, oe := ensureProjectEditor(id)
 			r = mergeResult(r, o)
 			if oe != nil {
 				return cfg, "", r, oe
@@ -188,20 +188,16 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 
 func ensureProjectLabels(project, account string) (commandResult, error) {
 	labels := "--update-labels=cloud-charm=managed,cloud_account=" + accountHash(account)
-	r, err := runTimeout(45*time.Second, "gcloud", "projects", "update", project, labels, "--quiet")
-	if err == nil || !strings.Contains(strings.ToLower(usefulOutput(r)), "unrecognized arguments") {
-		return r, err
-	}
-	return runTimeout(45*time.Second, "gcloud", "alpha", "projects", "update", project, labels, "--quiet")
+	return runTimeout(45*time.Second, "gcloud", "projects", "update", project, labels, "--quiet")
 }
 
-func projectOwner(ctx context.Context, project, email string) (bool, error) {
+func projectEditor(ctx context.Context, project, email string) (bool, error) {
 	r, err := run(ctx, "gcloud", "projects", "get-iam-policy", project,
 		"--flatten=bindings[].members", "--filter=bindings.role:roles/editor AND bindings.members:user:"+email, "--format=value(bindings.members)")
 	return strings.Contains(r.Stdout, "user:"+email), err
 }
 
-func ensureProjectOwner(project string) (commandResult, error) {
+func ensureProjectEditor(project string) (commandResult, error) {
 	var last commandResult
 	var err error
 	for i := 0; i < 6; i++ {
