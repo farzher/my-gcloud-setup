@@ -41,7 +41,17 @@ func ensureHTTPS(cfg config) (commandResult, error) {
 certbot --nginx --non-interactive --agree-tos --redirect --no-eff-email --email ` + shellQuote(adminEmail) + ` -d ` + shellQuote(domain) + `
 systemctl enable --now certbot.timer >/dev/null 2>&1 || true
 `
-	return runRemoteScript(cfg, 5*time.Minute, script)
+	r, err := runRemoteScript(cfg, 5*time.Minute, script)
+	if err == nil {
+		return r, nil
+	}
+	// If Certbot failed because DNS changed or has not propagated everywhere yet,
+	// classify it as the same non-fatal pending-DNS state as the DNS step.
+	dns, dnsErr := ensureDNS(cfg)
+	if errors.Is(dnsErr, errDNSRequired) {
+		return mergeResult(r, dns), errDNSRequired
+	}
+	return mergeResult(r, dns), err
 }
 
 func verifyServer(cfg config) (commandResult, error) {

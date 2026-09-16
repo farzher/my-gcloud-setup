@@ -55,8 +55,8 @@ func (m model) activateMenu() (tea.Model, tea.Cmd) {
 		if err := saveConfig(m.cfg); err != nil {
 			return m.showError(screenServer, err, err.Error())
 		}
-		m.startProvisionAt(11)
-		return m, runStepCmd(11, m.cfg, m.billingID)
+		m.startProvisionAt(12)
+		return m, runStepCmd(12, m.cfg, m.billingID)
 	case "Restart":
 		m.busy, m.statusText = true, "Restarting"
 		return m, lifecycleCmd("Restart", m.cfg, "reset")

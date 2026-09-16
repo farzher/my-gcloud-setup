@@ -133,8 +133,12 @@ func (m model) renderServer() string {
 		detail := domain
 		warn := false
 		if !m.state.HTTPSReady {
-			detail = "HTTP only · " + domain
 			warn = true
+			if m.state.DNSReady {
+				detail = "SSL pending · " + domain
+			} else {
+				detail = "pending DNS · " + domain
+			}
 		}
 		rows = append(rows, struct {
 			name, detail string
@@ -165,6 +169,9 @@ func (m model) renderServer() string {
 			b.WriteString(" " + mutedStyle.Render(r.detail))
 		}
 		b.WriteString("\n")
+	}
+	if domain != "" && !m.state.HTTPSReady && !m.state.DNSReady && ip != "" {
+		b.WriteString(mutedStyle.Render("  A "+domain+" → "+ip) + "\n")
 	}
 	if len(m.state.CostWarnings) > 0 {
 		b.WriteString("\n" + warnStyle.Render("⚠ Potential billing") + "\n")

@@ -107,6 +107,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusText = "GitHub login"
 				return m, githubAuthCmd()
 			}
+			if errors.Is(msg.err, errDNSRequired) && m.cfg.domainFor(m.state.Account) != "" {
+				m.cfg.setHTTPSDeferred(m.state.Account, true)
+				if err := saveConfig(m.cfg); err != nil {
+					return m.showError(screenServer, err, err.Error())
+				}
+				m.lastErr = nil
+				m.steps[msg.index].State = 2
+				m.steps[msg.index].Detail = "pending DNS"
+				if msg.index == 12 && len(m.steps) > 13 {
+					m.steps[13].State = 2
+					m.steps[13].Detail = "deferred"
+				}
+				m.stepIndex = 14
+				m.steps[m.stepIndex].State = 1
+				m.busy = true
+				return m, runStepCmd(m.stepIndex, m.cfg, m.billingID)
+			}
 			m.steps[msg.index].State = 3
 			detail := shortError(msg.err)
 			for _, line := range nonEmptyLines(msg.output) {
