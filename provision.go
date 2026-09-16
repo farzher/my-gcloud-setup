@@ -3,6 +3,7 @@ package main
 import (
 	tea "charm.land/bubbletea/v2"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -142,9 +143,39 @@ func runProvisionStep(index int, cfg config, billingID string) (config, string, 
 	}
 }
 
+func projectLabelsManaged(labels map[string]string, account string) bool {
+	return labels["cloud-charm"] == "managed" && labels["cloud_account"] == accountHash(account)
+}
+
+func requireManagedProject(cfg config) (commandResult, error) {
+	if cfg.Project == "" {
+		return commandResult{}, errors.New("project is not set")
+	}
+	if cfg.Account == "" {
+		return commandResult{}, errors.New("Google account is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	r, err := run(ctx, "gcloud", "projects", "describe", cfg.Project, "--format=json(projectId,labels)")
+	if err != nil {
+		return r, err
+	}
+	var project struct {
+		ProjectID string            `json:"projectId"`
+		Labels    map[string]string `json:"labels"`
+	}
+	if err := json.Unmarshal([]byte(r.Stdout), &project); err != nil {
+		return r, fmt.Errorf("decode project metadata: %w", err)
+	}
+	if project.ProjectID == "" || !projectLabelsManaged(project.Labels, cfg.Account) {
+		return r, fmt.Errorf("project %s is not managed by cloud; refusing to modify it", cfg.Project)
+	}
+	return r, nil
+}
+
 func ensureProject(cfg config) (config, string, commandResult, error) {
 	if cfg.Project != "" {
-		r, err := runTimeout(30*time.Second, "gcloud", "projects", "describe", cfg.Project, "--format=value(projectId)")
+		r, err := requireManagedProject(cfg)
 		if err == nil {
 			o, oe := ensureProjectEditor(cfg.Project)
 			return cfg, cfg.Project, mergeResult(r, o), oe
@@ -184,11 +215,6 @@ func ensureProject(cfg config) (config, string, commandResult, error) {
 		}
 	}
 	return cfg, "", last, fmt.Errorf("project create failed: %w", lastErr)
-}
-
-func ensureProjectLabels(project, account string) (commandResult, error) {
-	labels := "--update-labels=cloud-charm=managed,cloud_account=" + accountHash(account)
-	return runTimeout(45*time.Second, "gcloud", "projects", "update", project, labels, "--quiet")
 }
 
 func projectEditor(ctx context.Context, project, email string) (bool, error) {
