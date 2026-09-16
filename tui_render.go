@@ -21,6 +21,16 @@ func (m model) renderServer() string {
 	}
 	b.WriteString("\n\n")
 
+	if m.editingDomain {
+		b.WriteString(titleStyle.Render("Domain") + "\n\n")
+		b.WriteString(accentStyle.Render("› ") + m.domainInput + accentStyle.Render("▌"))
+		if m.domainError != "" {
+			b.WriteString("\n\n" + badStyle.Render(m.domainError))
+		}
+		b.WriteString("\n\n" + mutedStyle.Render("enter save + configure HTTPS  esc"))
+		return b.String()
+	}
+
 	if m.editingSite {
 		b.WriteString(titleStyle.Render("Domain / name") + "\n\n")
 		b.WriteString(accentStyle.Render("› ") + m.siteInput + accentStyle.Render("▌"))
@@ -92,7 +102,9 @@ func (m model) renderServer() string {
 			hint := "r retry  d details  q"
 			if errors.Is(m.lastErr, errDNSRequired) {
 				b.WriteString("\n" + warnStyle.Render("A "+m.cfg.domainFor(m.state.Account)+" → "+m.state.StaticIP))
-				hint = "r retry  s skip domain  d details  q"
+				hint = "r retry  s HTTP for now  d details  q"
+			} else if m.cfg.domainFor(m.state.Account) != "" && m.stepIndex == 13 {
+				hint = "r retry  s HTTP for now  d details  q"
 			}
 			b.WriteString("\n\n" + mutedStyle.Render(hint))
 		}
@@ -118,15 +130,21 @@ func (m model) renderServer() string {
 	}
 	domain := m.cfg.domainFor(m.state.Account)
 	if domain != "" {
+		detail := domain
+		warn := false
+		if !m.state.HTTPSReady {
+			detail = "HTTP only · " + domain
+			warn = true
+		}
 		rows = append(rows, struct {
 			name, detail string
 			ok, warn     bool
-		}{"HTTPS", domain, m.state.HTTPSReady, false})
+		}{"HTTPS", detail, m.state.HTTPSReady, warn})
 	} else {
 		rows = append(rows, struct {
 			name, detail string
 			ok, warn     bool
-		}{"Web", "HTTP", m.state.WebReady, false})
+		}{"Web", "HTTP · no domain", m.state.WebReady, false})
 	}
 	if status == "RUNNING" {
 		backup, fresh := backupStatus(m.state.BackupTime)
@@ -161,7 +179,7 @@ func (m model) renderServer() string {
 	if m.statusText != "" {
 		b.WriteString("\n" + spinner(m.frame) + " " + m.statusText)
 	}
-	b.WriteString("\n" + mutedStyle.Render("↑/↓  enter  r  n  q"))
+	b.WriteString("\n" + mutedStyle.Render("↑/↓  enter  r refresh  q"))
 	return b.String()
 }
 
@@ -250,6 +268,7 @@ func (m *model) resetAccountTransient() {
 	m.otherVMs, m.otherVMCount, m.vmScanAccount = nil, 0, ""
 	m.vmScanBusy, m.vmWarningAck = false, false
 	m.editingSite, m.siteInput, m.siteError = false, "", ""
+	m.editingDomain, m.domainInput, m.domainError = false, "", ""
 	m.steps, m.stepIndex = nil, 0
 	m.lastErr, m.lastOutput, m.lastCommand = nil, "", ""
 }
