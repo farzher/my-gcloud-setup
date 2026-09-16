@@ -72,10 +72,12 @@ type model struct {
 
 	editingSite bool
 	siteInput   string
+	siteCursor  int
 	siteError   string
 
 	editingDomain bool
 	domainInput   string
+	domainCursor  int
 	domainError   string
 
 	steps     []provisionStep
