@@ -3,3 +3,4 @@ my-gcloud-setup.exe
 cloud
 cloud.exe
 *.tmp
+.cloud-script-*.sh
