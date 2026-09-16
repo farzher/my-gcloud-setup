@@ -177,6 +177,27 @@ var (
 	errDNSRequired         = errors.New("DNS record required")
 )
 
+type detectedMsg struct {
+	state cloudState
+	err   error
+}
+
+type fullDetectedMsg struct {
+	account string
+	state   cloudState
+	err     error
+}
+
 func detectCmd(cfg config) tea.Cmd {
-	return func() tea.Msg { s, err := detect(cfg); return detectedMsg{s, err} }
+	return func() tea.Msg {
+		s, err := detectSession()
+		return detectedMsg{s, err}
+	}
+}
+
+func fullDetectCmd(cfg config, account string) tea.Cmd {
+	return func() tea.Msg {
+		s, err := detect(cfg)
+		return fullDetectedMsg{account: account, state: s, err: err}
+	}
 }
