@@ -11,7 +11,7 @@ func (m *model) syncMenu() {
 	if strings.EqualFold(m.state.Instance.Status, "TERMINATED") || strings.EqualFold(m.state.Instance.Status, "STOPPED") {
 		power = "Start"
 	}
-	m.menu = []string{"Hermes", "Gateway", "SSH", "Restart", power, "Rebuild", "Destroy", "Account"}
+	m.menu = []string{"Hermes", "Gateway", "SSH", "Console", "Restart", power, "Rebuild", "Destroy", "Account"}
 	if m.menuPos >= len(m.menu) {
 		m.menuPos = max(0, len(m.menu)-1)
 	}
@@ -31,6 +31,8 @@ func (m model) activateMenu() (tea.Model, tea.Cmd) {
 	case "SSH":
 		m.external = externalSSH
 		return m, tea.Quit
+	case "Console":
+		return m, openBrowserCmd(cloudConsoleURL(m.cfg.Project))
 	case "Restart":
 		m.busy, m.statusText = true, "Restarting"
 		return m, lifecycleCmd("Restart", m.cfg, "reset")
