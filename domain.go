@@ -101,7 +101,7 @@ nginx -t >/dev/null 2>&1
 nginx -T 2>/dev/null | grep -Fq 'proxy_pass http://127.0.0.1:3000;'
 /usr/local/bin/server-status >/dev/null
 `
-	if domain != "" {
+	if domain != "" && !cfg.httpsDeferredFor(cfg.Account) {
 		cert := "/etc/letsencrypt/live/" + domain + "/fullchain.pem"
 		script += `[ -s ` + shellQuote(cert) + ` ]
 nginx -T 2>/dev/null | grep -Fq ` + shellQuote("ssl_certificate "+cert) + `
