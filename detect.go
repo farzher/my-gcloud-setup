@@ -182,11 +182,11 @@ func discoverManagedProject(ctx context.Context, account string) string {
 	return ""
 }
 
-func scanVMsCmd(account, managedProject string) tea.Cmd {
+func scanVMsCmd(account, managedProject, managedZone string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
-		vms, count := scanExistingVMs(ctx, managedProject)
+		vms, count := scanExistingVMs(ctx, managedProject, managedZone)
 		return vmScanMsg{account, vms, count}
 	}
 }
