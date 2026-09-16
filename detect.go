@@ -124,7 +124,7 @@ func detect(cfg config) (cloudState, error) {
 				s.HTTPSReady = true
 			}
 		}
-		domainOK := cfg.domainFor(s.Account) == "" || (s.DNSReady && s.HTTPSReady)
+		domainOK := cfg.domainFor(s.Account) == "" || cfg.httpsDeferredFor(s.Account) || (s.DNSReady && s.HTTPSReady)
 		s.VerifyReady = s.SSHReady && s.SystemReady && s.HermesReady && s.ChatGPTReady && s.GitHubReady && s.WebReady && domainOK
 	}
 	if auditDone != nil {
