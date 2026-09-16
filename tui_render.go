@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 func (m model) renderServer() string {
@@ -93,28 +94,37 @@ func (m model) renderServer() string {
 	}
 	rows := []struct {
 		name, detail string
-		ok           bool
+		ok, warn     bool
 	}{
-		{"VM", status, m.state.VMExists},
-		{"IP", ip, ip != ""},
-		{"Hermes", chatGPTModel + " · " + chatGPTEffort, m.state.ChatGPTReady},
-		{"GitHub", m.cfg.repoFor(m.state.Account), m.state.GitHubReady},
+		{"VM", status, m.state.VMExists, false},
+		{"IP", ip, ip != "", false},
+		{"Hermes", chatGPTModel + " · " + chatGPTEffort, m.state.ChatGPTReady, false},
+		{"GitHub", m.cfg.repoFor(m.state.Account), m.state.GitHubReady, false},
 	}
 	domain := m.cfg.domainFor(m.state.Account)
 	if domain != "" {
 		rows = append(rows, struct {
 			name, detail string
-			ok           bool
-		}{"HTTPS", domain, m.state.HTTPSReady})
+			ok, warn     bool
+		}{"HTTPS", domain, m.state.HTTPSReady, false})
 	} else {
 		rows = append(rows, struct {
 			name, detail string
-			ok           bool
-		}{"Web", "HTTP", m.state.WebReady})
+			ok, warn     bool
+		}{"Web", "HTTP", m.state.WebReady, false})
+	}
+	if status == "RUNNING" {
+		backup, fresh := backupStatus(m.state.BackupTime)
+		rows = append(rows, struct {
+			name, detail string
+			ok, warn     bool
+		}{"Backup", backup, fresh, !fresh})
 	}
 	for _, r := range rows {
 		icon := mutedStyle.Render("·")
-		if r.ok {
+		if r.warn {
+			icon = warnStyle.Render("!")
+		} else if r.ok {
 			icon = goodStyle.Render("✓")
 		}
 		b.WriteString(fmt.Sprintf("%s %-8s", icon, r.name))
@@ -122,6 +132,12 @@ func (m model) renderServer() string {
 			b.WriteString(" " + mutedStyle.Render(r.detail))
 		}
 		b.WriteString("\n")
+	}
+	if len(m.state.CostWarnings) > 0 {
+		b.WriteString("\n" + warnStyle.Render("⚠ Potential billing") + "\n")
+		for _, warning := range m.state.CostWarnings {
+			b.WriteString(mutedStyle.Render("  "+warning) + "\n")
+		}
 	}
 	b.WriteString("\n")
 	for i, item := range m.menu {
@@ -132,6 +148,29 @@ func (m model) renderServer() string {
 	}
 	b.WriteString("\n" + mutedStyle.Render("↑/↓  enter  r  n  q"))
 	return b.String()
+}
+
+func backupStatus(value string) (string, bool) {
+	if value == "" {
+		return "never", false
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return "unknown", false
+	}
+	age := time.Since(t)
+	if age < 0 {
+		age = 0
+	}
+	fresh := age < 36*time.Hour
+	if age < 24*time.Hour {
+		return "today", fresh
+	}
+	days := int(age / (24 * time.Hour))
+	if days < 1 {
+		days = 1
+	}
+	return fmt.Sprintf("%dd ago", days), fresh
 }
 
 func (m model) renderConfirm() string {
