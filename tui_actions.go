@@ -27,8 +27,10 @@ func (m model) updateSiteInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.busy = true
 		return m, renameSiteCmd(m.cfg, name, domain)
 	case "esc":
-		if m.cfg.Project != "" {
-			m.editingSite, m.siteInput, m.siteError = false, "", ""
+		m.editingSite, m.siteInput, m.siteError = false, "", ""
+		if m.cfg.Project == "" {
+			m.screen = screenAccount
+			m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
 		}
 		return m, nil
 	case "backspace":
