@@ -6,10 +6,12 @@ set -Eeuo pipefail
 umask 077
 APP=/website/app
 DATA=/website/data
+STATE=/var/lib/website
 REMOTE="$(git -C "$APP" remote get-url origin)"
 exec 9>/run/lock/web-state.lock
 flock -n 9 || { echo 'Another deploy, backup, or restore is already running.' >&2; exit 1; }
 install -d -m 0750 "$DATA"
+install -d -m 0755 "$STATE"
 if find "$DATA" -type l -print -quit | grep -q .; then
   echo 'Persistent-data symlinks are not supported; remove symlinks from /website/data before backup.' >&2
   exit 1
@@ -40,6 +42,7 @@ cd "$GIT"
 CHUNK_BYTES=94371840
 sudo -u postgres pg_dump -Fc web | split -b "$CHUNK_BYTES" -d -a 3 - "$TMP/database.dump.part-"
 compgen -G "$TMP/database.dump.part-*" >/dev/null || { echo 'pg_dump produced no backup data' >&2; exit 1; }
+cat "$TMP"/database.dump.part-* | pg_restore -f /dev/null
 set -- "$TMP"/database.dump.part-*
 if [ "$#" -eq 1 ]; then mv "$1" "$TMP/database.dump"; fi
 
@@ -194,6 +197,7 @@ git config user.name 'Cloud Backup'
 git config user.email 'backup@localhost'
 COMMIT="$(printf 'Server backup %s\n' "$DAY" | git commit-tree "$TREE")"
 git push -q --force origin "$COMMIT:refs/heads/backup"
+date -u +%FT%TZ >"$STATE/last-backup-success"
 printf 'Backed up PostgreSQL, %s, and Hermes knowledge.\n' "$DATA"
 `
 }
