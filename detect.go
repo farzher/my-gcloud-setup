@@ -5,100 +5,118 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 )
 
-func detect(cfg config) (cloudState, error) {
-	var s cloudState
-	if !hasExecutable("gcloud") {
+func detectCloud(cfg config, account string, accounts []string) (cloudState, error) {
+	s := cloudState{Gcloud: true, Account: account, Accounts: accounts}
+	if account == "" {
 		return s, nil
 	}
-	s.Gcloud = true
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	cfg.Account = account
+	cfg.Project = cfg.projectFor(account)
+	cfg.Repo = cfg.repoFor(account)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	if r, err := run(ctx, "gcloud", "auth", "list", "--format=value(account)"); err == nil {
-		s.Accounts = uniqueLines(r.Stdout)
-		sort.Strings(s.Accounts)
+	type billingResult struct {
+		items []billingAccount
+		err   error
 	}
-	r, err := run(ctx, "gcloud", "auth", "list", "--filter=status:ACTIVE", "--format=value(account)")
-	if err != nil {
-		return s, fmt.Errorf("gcloud auth: %w\n%s", err, usefulOutput(r))
-	}
-	s.Account = firstLine(r.Stdout)
-	if s.Account == "" {
-		return s, nil
-	}
-	cfg.Account = s.Account
-	cfg.Project = cfg.projectFor(s.Account)
-	cfg.Repo = cfg.repoFor(s.Account)
-
-	r, err = run(ctx, "gcloud", "billing", "accounts", "list", "--filter=open=true", "--format=json")
-	if err != nil {
-		return s, fmt.Errorf("billing accounts: %w\n%s", err, usefulOutput(r))
-	}
-	if strings.TrimSpace(r.Stdout) != "" {
-		if err = json.Unmarshal([]byte(r.Stdout), &s.Billing); err != nil {
-			return s, fmt.Errorf("billing accounts: invalid response: %w", err)
+	billingCh := make(chan billingResult, 1)
+	go func() {
+		r, err := run(ctx, "gcloud", "billing", "accounts", "list", "--filter=open=true", "--format=json")
+		if err != nil {
+			billingCh <- billingResult{err: fmt.Errorf("billing accounts: %w\n%s", err, usefulOutput(r))}
+			return
 		}
-	}
+		var items []billingAccount
+		if strings.TrimSpace(r.Stdout) != "" {
+			if err = json.Unmarshal([]byte(r.Stdout), &items); err != nil {
+				billingCh <- billingResult{err: fmt.Errorf("billing accounts: invalid response: %w", err)}
+				return
+			}
+		}
+		billingCh <- billingResult{items: items}
+	}()
 
 	project := cfg.Project
 	if project == "" {
-		s.ManagedProject = discoverManagedProject(ctx, s.Account)
+		s.ManagedProject = discoverManagedProject(ctx, account)
 		project = s.ManagedProject
 	}
-	if project == "" {
-		return s, nil
-	}
-	cfg.Project = project
-
-	if r, err = run(ctx, "gcloud", "projects", "describe", project, "--format=json"); err != nil {
-		return s, nil
-	}
-	var p struct {
-		ProjectID string            `json:"projectId"`
-		Labels    map[string]string `json:"labels"`
-	}
-	_ = json.Unmarshal([]byte(r.Stdout), &p)
-	s.ProjectOK = p.ProjectID != ""
-	if s.ProjectOK {
-		if !projectLabelsManaged(p.Labels, s.Account) {
-			return s, fmt.Errorf("project %s is not managed by cloud; refusing to modify it", project)
-		}
-		editor, editorErr := projectEditor(ctx, project, adminEmail)
-		if editorErr != nil {
-			return s, fmt.Errorf("editor access check: %w", editorErr)
-		}
-		if !editor {
-			if _, editorErr = ensureProjectEditor(project); editorErr != nil {
-				return s, fmt.Errorf("editor access setup: %w", editorErr)
+	if project != "" {
+		cfg.Project = project
+		r, err := run(ctx, "gcloud", "projects", "describe", project, "--format=json")
+		if err == nil {
+			var p struct {
+				ProjectID string            `json:"projectId"`
+				Labels    map[string]string `json:"labels"`
+			}
+			_ = json.Unmarshal([]byte(r.Stdout), &p)
+			s.ProjectOK = p.ProjectID != ""
+			if s.ProjectOK && !projectLabelsManaged(p.Labels, account) {
+				return s, fmt.Errorf("project %s is not managed by cloud; refusing to modify it", project)
 			}
 		}
 	}
 
-	if cfg.region() == "" {
+	billing := <-billingCh
+	if billing.err != nil {
+		return s, billing.err
+	}
+	s.Billing = billing.items
+
+	if !s.ProjectOK || cfg.region() == "" {
 		return s, nil
 	}
 
-	if r, err = run(ctx, "gcloud", "compute", "instances", "describe", vmName, "--project="+project, "--zone="+cfg.zone(), "--format=json"); err == nil && r.Stdout != "" {
+	type commandOut struct {
+		r   commandResult
+		err error
+	}
+	instanceCh := make(chan commandOut, 1)
+	addressCh := make(chan commandOut, 1)
+	go func() {
+		r, err := run(ctx, "gcloud", "compute", "instances", "describe", vmName, "--project="+project, "--zone="+cfg.zone(), "--format=json")
+		instanceCh <- commandOut{r, err}
+	}()
+	go func() {
+		r, err := run(ctx, "gcloud", "compute", "addresses", "describe", addressName, "--project="+project, "--region="+cfg.region(), "--format=value(address)")
+		addressCh <- commandOut{r, err}
+	}()
+
+	instance := <-instanceCh
+	if instance.err == nil && strings.TrimSpace(instance.r.Stdout) != "" {
 		s.VMExists = true
-		_ = json.Unmarshal([]byte(r.Stdout), &s.Instance)
+		_ = json.Unmarshal([]byte(instance.r.Stdout), &s.Instance)
 	}
-	if r, err = run(ctx, "gcloud", "compute", "addresses", "describe", addressName, "--project="+project, "--region="+cfg.region(), "--format=value(address)"); err == nil {
-		s.StaticIP = firstLine(r.Stdout)
+	address := <-addressCh
+	if address.err == nil {
+		s.StaticIP = firstLine(address.r.Stdout)
 	}
+	return s, nil
+}
 
-	var auditDone chan []string
-	if s.VMExists {
-		auditDone = make(chan []string, 1)
-		go func() { auditDone <- auditFreeTier(ctx, cfg, s.Instance, s.StaticIP) }()
+func detectServices(cfg config, base cloudState) serviceState {
+	var s serviceState
+	if !base.VMExists {
+		return s
 	}
+	cfg.Account = base.Account
+	cfg.Project = cfg.projectFor(base.Account)
+	cfg.Repo = cfg.repoFor(base.Account)
 
-	if s.VMExists && strings.EqualFold(s.Instance.Status, "RUNNING") {
-		probe, _ := runRemoteScript(cfg, 35*time.Second, remoteProbe(cfg, s.StaticIP))
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	auditCh := make(chan []string, 1)
+	go func() { auditCh <- auditFreeTier(ctx, cfg, base.Instance, base.StaticIP) }()
+
+	if strings.EqualFold(base.Instance.Status, "RUNNING") {
+		probe, _ := runRemoteScript(cfg, 35*time.Second, remoteProbe(cfg, base.StaticIP))
 		for _, line := range nonEmptyLines(probe.Stdout) {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "BACKUP_TIME ") {
@@ -124,13 +142,11 @@ func detect(cfg config) (cloudState, error) {
 				s.HTTPSReady = true
 			}
 		}
-		domainOK := cfg.domainFor(s.Account) == "" || cfg.httpsDeferredFor(s.Account) || (s.DNSReady && s.HTTPSReady)
+		domainOK := cfg.domainFor(base.Account) == "" || cfg.httpsDeferredFor(base.Account) || (s.DNSReady && s.HTTPSReady)
 		s.VerifyReady = s.SSHReady && s.SystemReady && s.HermesReady && s.ChatGPTReady && s.GitHubReady && s.WebReady && domainOK
 	}
-	if auditDone != nil {
-		s.CostWarnings = <-auditDone
-	}
-	return s, nil
+	s.CostWarnings = <-auditCh
+	return s
 }
 
 func remoteProbe(cfg config, staticIP string) string {

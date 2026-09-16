@@ -112,6 +112,7 @@ func (m model) updateSiteInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.editingSite, m.siteInput, m.siteError = false, "", ""
 		m.siteCursor = 0
 		if m.cfg.Project == "" {
+			m.autoRoute = false
 			m.screen = screenAccount
 			m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
 		}
@@ -158,6 +159,12 @@ func (m model) updateDomainInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateAccount(k string) (tea.Model, tea.Cmd) {
+	if m.busy {
+		if k == "q" {
+			return m, tea.Quit
+		}
+		return m, nil
+	}
 	count := len(m.state.Accounts) + 2
 	if count < 2 {
 		count = 2
@@ -177,20 +184,33 @@ func (m model) updateAccount(k string) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.accountPos < len(m.state.Accounts) {
 			target := m.state.Accounts[m.accountPos]
+			m.autoRoute = true
 			if target == m.state.Account {
+				if m.cloudLoaded {
+					m.screen = screenServer
+					m.autoRoute = false
+					return m, m.route()
+				}
 				m.screen = screenServer
-				return m, m.route()
+				m.refreshing = true
+				m.statusText = "Checking cloud"
+				return m, fullDetectCmd(m.cfg, m.state.Account, m.state.Accounts)
 			}
 			m.busy = true
+			m.cloudLoaded = false
+			m.servicesLoaded = false
+			m.servicesRefreshing = false
 			m.screen = screenLoading
 			m.statusText = "Switching account"
 			return m, switchGoogleAccountCmd(target)
 		}
 		if m.accountPos == len(m.state.Accounts) {
 			m.busy = true
+			m.statusText = "Signing in"
 			return m, googleBrowserAuthCmd()
 		}
 		m.busy = true
+		m.statusText = "Signing in"
 		return m, googleQRAuthCmd()
 	}
 	return m, nil
@@ -214,27 +234,21 @@ func (m model) updateServer(k string) (tea.Model, tea.Cmd) {
 			_ = saveConfig(m.cfg)
 			m.startProvisionAt(0)
 			return m, runStepCmd(0, m.cfg, m.billingID)
-		case "a":
-			m.screen = screenAccount
-			m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
 		case "q":
 			return m, tea.Quit
 		}
 		return m, nil
 	}
-	if m.state.VMExists && len(m.steps) == 0 && strings.EqualFold(m.state.Instance.Status, "RUNNING") {
+	if m.state.VMExists && len(m.steps) == 0 && strings.EqualFold(m.state.Instance.Status, "RUNNING") && m.servicesLoaded {
 		if idx := firstMissingStep(m.state, m.cfg); idx >= 0 {
 			switch k {
 			case "enter":
 				m.startProvisionAt(idx)
 				return m, runStepCmd(idx, m.cfg, m.billingID)
-			case "a":
-				m.screen = screenAccount
-				m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
 			case "r":
-				m.busy = true
+				m.refreshing = true
 				m.statusText = "Refreshing"
-				return m, detectCmd(m.cfg)
+				return m, fullDetectCmd(m.cfg, m.state.Account, m.state.Accounts)
 			case "q":
 				return m, tea.Quit
 			}
@@ -277,9 +291,11 @@ func (m model) updateServer(k string) (tea.Model, tea.Cmd) {
 			m.menuPos++
 		}
 	case "r":
-		m.busy = true
-		m.statusText = "Refreshing"
-		return m, detectCmd(m.cfg)
+		if !m.refreshing {
+			m.refreshing = true
+			m.statusText = "Refreshing"
+			return m, fullDetectCmd(m.cfg, m.state.Account, m.state.Accounts)
+		}
 	case "q":
 		return m, tea.Quit
 	case "enter":
@@ -358,7 +374,7 @@ func (m *model) route() tea.Cmd {
 		m.steps = nil
 		return nil
 	}
-	if firstMissingStep(m.state, m.cfg) >= 0 {
+	if m.servicesLoaded && firstMissingStep(m.state, m.cfg) >= 0 {
 		m.steps = nil
 		return nil
 	}
@@ -396,6 +412,7 @@ func firstMissingStep(s cloudState, cfg config) int {
 func (m *model) startProvisionAt(index int) {
 	m.screen = screenServer
 	m.busy = true
+	m.autoRoute = false
 	m.lastErr, m.lastOutput, m.lastCommand = nil, "", ""
 	m.steps = makeSteps(m.cfg.domainFor(m.state.Account) != "")
 	if index < 0 {

@@ -13,13 +13,13 @@ func (m *model) syncMenu() {
 	}
 	domainAction := "Add domain"
 	if m.cfg.domainFor(m.state.Account) != "" {
-		if m.state.HTTPSReady {
+		if !m.servicesLoaded || m.state.HTTPSReady {
 			domainAction = "Domain"
 		} else {
 			domainAction = "Enable HTTPS"
 		}
 	}
-	m.menu = []string{"Hermes", "Gateway", "SSH", "Console", domainAction, "Restart", power, "Rebuild", "Destroy", "Account"}
+	m.menu = []string{"Hermes", "Gateway", "SSH", "Console", domainAction, "Restart", power, "Rebuild", "Destroy", "Accounts"}
 	if m.menuPos >= len(m.menu) {
 		m.menuPos = max(0, len(m.menu)-1)
 	}
@@ -72,7 +72,8 @@ func (m model) activateMenu() (tea.Model, tea.Cmd) {
 		m.screen, m.confirm, m.confirmPos = screenConfirm, confirmRebuild, 1
 	case "Destroy":
 		m.screen, m.confirm, m.confirmPos = screenConfirm, confirmDestroy, 2
-	case "Account":
+	case "Accounts":
+		m.autoRoute = false
 		m.screen = screenAccount
 		m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
 	}
@@ -125,11 +126,11 @@ func (m model) render() string {
 	case screenLoading:
 		label := m.statusText
 		if label == "" {
-			label = "cloud"
+			label = "Starting"
 		}
 		return m.header() + "\n\n" + spinner(m.frame) + " " + label
 	case screenNeedGcloud:
-		return m.header() + "\n\n" + badStyle.Render("gcloud not found") + "\n\n" + button("Install gcloud") + "\n\n" + mutedStyle.Render("enter  r  q")
+		return m.header() + "\n\n" + badStyle.Render("gcloud not found") + "\n\n" + button("Install gcloud") + "\n\n" + hintLine("Enter", "open", "R", "retry", "Q", "quit")
 	case screenAccount:
 		return m.renderAccount()
 	case screenBilling:
@@ -153,7 +154,7 @@ func (m model) header() string { return accentStyle.Render("●") + " " + titleS
 
 func (m model) renderAccount() string {
 	var b strings.Builder
-	b.WriteString(m.header() + "\n\n" + titleStyle.Render("Account") + "\n\n")
+	b.WriteString(m.header() + "\n\n" + titleStyle.Render("Accounts") + "\n\n")
 	for i, a := range m.state.Accounts {
 		label := a
 		if a == m.state.Account {
@@ -162,9 +163,14 @@ func (m model) renderAccount() string {
 		b.WriteString(choiceLine(label, i == m.accountPos) + "\n")
 	}
 	base := len(m.state.Accounts)
-	b.WriteString(choiceLine("Browser", m.accountPos == base) + "\n")
-	b.WriteString(choiceLine("QR code", m.accountPos == base+1) + "\n\n")
-	b.WriteString(mutedStyle.Render("↑/↓  enter  q"))
+	b.WriteString(choiceLine("Add via browser", m.accountPos == base) + "\n")
+	b.WriteString(choiceLine("Add via QR code", m.accountPos == base+1) + "\n")
+	if m.refreshing {
+		b.WriteString("\n" + spinner(m.frame) + " " + mutedStyle.Render("Refreshing current account"))
+	} else if m.statusText != "" {
+		b.WriteString("\n" + mutedStyle.Render(m.statusText))
+	}
+	b.WriteString("\n\n" + hintLine("↑↓", "move", "Enter", "select", "Q", "quit"))
 	return b.String()
 }
 
@@ -174,18 +180,19 @@ func (m model) renderBillingSetup() string {
 	b.WriteString(accentStyle.Render(m.state.Account) + "\n\n")
 	b.WriteString("No billing account found.\n")
 	b.WriteString(mutedStyle.Render("Create one for this Google account.") + "\n")
-	b.WriteString(mutedStyle.Render("First-time Google Cloud setup happens there.") + "\n\n")
+	b.WriteString(mutedStyle.Render("This screen checks automatically.") + "\n\n")
 	for i, label := range []string{"Copy setup link", "QR code", "Open browser"} {
 		b.WriteString(choiceLine(label, i == m.billingSetupPos) + "\n")
 	}
-	if m.statusText != "" {
+	if m.statusText != "" && !m.refreshing {
 		b.WriteString("\n" + goodStyle.Render(m.statusText))
-	} else if m.busy {
-		b.WriteString("\n" + spinner(m.frame) + " checking billing")
+	} else if m.refreshing {
+		b.WriteString("\n" + spinner(m.frame) + " " + mutedStyle.Render("Checking billing"))
 	} else {
 		b.WriteString("\n" + mutedStyle.Render("Waiting for billing…"))
 	}
-	b.WriteString("\n\n" + mutedStyle.Render("↑/↓  enter  r refresh  a account  q"))
+	b.WriteString("\n\n" + hintLine("↑↓", "move", "Enter", "select"))
+	b.WriteString("\n" + hintLine("A", "accounts", "R", "refresh", "Q", "quit"))
 	return b.String()
 }
 
@@ -198,7 +205,8 @@ func (m model) renderLocation() string {
 		b.WriteString(choiceLine(loc.Label+" · "+loc.Place, i == m.locationPos) + "\n")
 	}
 	b.WriteString("\n" + mutedStyle.Render("All three are Free Tier eligible."))
-	b.WriteString("\n\n" + mutedStyle.Render("↑/↓  enter  a account  q"))
+	b.WriteString("\n\n" + hintLine("↑↓", "move", "Enter", "select"))
+	b.WriteString("\n" + hintLine("A", "accounts", "Q", "quit"))
 	return b.String()
 }
 
@@ -212,6 +220,15 @@ func (m model) renderBilling() string {
 		}
 		b.WriteString(choiceLine(name, i == m.billingPos) + "\n")
 	}
-	b.WriteString("\n" + mutedStyle.Render("↑/↓  enter  q"))
+	b.WriteString("\n" + hintLine("↑↓", "move", "Enter", "select"))
+	b.WriteString("\n" + hintLine("A", "accounts", "Q", "quit"))
 	return b.String()
+}
+
+func hintLine(items ...string) string {
+	var parts []string
+	for i := 0; i+1 < len(items); i += 2 {
+		parts = append(parts, accentStyle.Render(items[i])+" "+mutedStyle.Render(items[i+1]))
+	}
+	return strings.Join(parts, "   ")
 }

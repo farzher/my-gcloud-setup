@@ -27,7 +27,7 @@ func (m model) renderServer() string {
 		if m.domainError != "" {
 			b.WriteString("\n\n" + badStyle.Render(m.domainError))
 		}
-		b.WriteString("\n\n" + mutedStyle.Render("enter save + configure HTTPS  esc"))
+		b.WriteString("\n\n" + hintLine("Enter", "save", "Esc", "cancel"))
 		return b.String()
 	}
 
@@ -37,18 +37,24 @@ func (m model) renderServer() string {
 		if m.siteError != "" {
 			b.WriteString("\n\n" + badStyle.Render(m.siteError))
 		}
-		b.WriteString("\n\n" + mutedStyle.Render("enter"))
-		if m.cfg.Project != "" {
-			b.WriteString(mutedStyle.Render("  esc"))
+		if m.cfg.Project == "" {
+			b.WriteString("\n\n" + hintLine("Enter", "save", "Esc", "accounts"))
 		} else {
-			b.WriteString(mutedStyle.Render("  esc account"))
+			b.WriteString("\n\n" + hintLine("Enter", "save", "Esc", "cancel"))
 		}
+		return b.String()
+	}
+
+	if m.refreshing && !m.cloudLoaded {
+		b.WriteString(spinner(m.frame) + " " + mutedStyle.Render("Checking cloud"))
+		b.WriteString("\n\n" + hintLine("A", "accounts", "Q", "quit"))
 		return b.String()
 	}
 
 	if (!m.state.VMExists && len(m.steps) == 0) || m.cfg.disabledFor(m.state.Account) {
 		if m.vmScanAccount != m.state.Account {
-			b.WriteString(spinner(m.frame) + " instances")
+			b.WriteString(spinner(m.frame) + " " + mutedStyle.Render("Checking existing VMs"))
+			b.WriteString("\n\n" + hintLine("A", "accounts", "Q", "quit"))
 			return b.String()
 		}
 		if m.otherVMCount > 0 && !m.vmWarningAck {
@@ -60,14 +66,15 @@ func (m model) renderServer() string {
 			if len(m.otherVMs) > 0 {
 				b.WriteString("\n" + mutedStyle.Render(m.otherVMs[0].Project+"/"+m.otherVMs[0].Name))
 			}
-			b.WriteString("\n\n" + mutedStyle.Render("enter acknowledge  a account  q"))
+			b.WriteString("\n\n" + hintLine("Enter", "acknowledge", "A", "accounts", "Q", "quit"))
 			return b.String()
 		}
-		b.WriteString(button("Create") + "\n\n" + mutedStyle.Render("enter  a account  q"))
+		b.WriteString(button("Create"))
+		b.WriteString("\n\n" + hintLine("Enter", "create", "A", "accounts", "Q", "quit"))
 		return b.String()
 	}
 
-	if m.state.VMExists && len(m.steps) == 0 && strings.EqualFold(m.state.Instance.Status, "RUNNING") {
+	if m.state.VMExists && len(m.steps) == 0 && strings.EqualFold(m.state.Instance.Status, "RUNNING") && m.servicesLoaded {
 		if idx := firstMissingStep(m.state, m.cfg); idx >= 0 {
 			steps := makeSteps(m.cfg.domainFor(m.state.Account) != "")
 			b.WriteString(warnStyle.Render("Setup incomplete"))
@@ -75,7 +82,8 @@ func (m model) renderServer() string {
 				b.WriteString("  " + mutedStyle.Render(steps[idx].Name))
 			}
 			b.WriteString("\n\n" + button("Continue setup"))
-			b.WriteString("\n\n" + mutedStyle.Render("enter  a account  r refresh  q"))
+			b.WriteString("\n\n" + hintLine("Enter", "continue", "A", "accounts"))
+			b.WriteString("\n" + hintLine("R", "refresh", "Q", "quit"))
 			return b.String()
 		}
 	}
@@ -99,14 +107,16 @@ func (m model) renderServer() string {
 		}
 		if !m.busy && m.stepIndex < len(m.steps) && m.steps[m.stepIndex].State == 3 {
 			b.WriteString("\n" + badStyle.Render(shortError(m.lastErr)))
-			hint := "r retry  d details  q"
 			if errors.Is(m.lastErr, errDNSRequired) {
 				b.WriteString("\n" + warnStyle.Render("A "+m.cfg.domainFor(m.state.Account)+" → "+m.state.StaticIP))
-				hint = "r retry  s HTTP for now  d details  q"
+				b.WriteString("\n\n" + hintLine("R", "retry", "S", "HTTP for now"))
+				b.WriteString("\n" + hintLine("D", "details", "A", "accounts", "Q", "quit"))
 			} else if m.cfg.domainFor(m.state.Account) != "" && m.stepIndex == 13 {
-				hint = "r retry  s HTTP for now  d details  q"
+				b.WriteString("\n\n" + hintLine("R", "retry", "S", "HTTP for now"))
+				b.WriteString("\n" + hintLine("D", "details", "A", "accounts", "Q", "quit"))
+			} else {
+				b.WriteString("\n\n" + hintLine("R", "retry", "D", "details", "A", "accounts", "Q", "quit"))
 			}
-			b.WriteString("\n\n" + mutedStyle.Render(hint))
 		}
 		return b.String()
 	}
@@ -119,43 +129,56 @@ func (m model) renderServer() string {
 	if ip == "" {
 		ip = m.state.StaticIP
 	}
-	rows := []struct {
+
+	type statusRow struct {
 		name, detail string
 		ok, warn     bool
-	}{
+	}
+	rows := []statusRow{
 		{"VM", status, m.state.VMExists, false},
 		{"IP", ip, ip != "", false},
-		{"Hermes", chatGPTModel + " · " + chatGPTEffort, m.state.HermesReady, false},
-		{"GitHub", m.cfg.repoFor(m.state.Account), m.state.GitHubReady, false},
 	}
+	if m.servicesLoaded {
+		rows = append(rows,
+			statusRow{"Hermes", chatGPTModel + " · " + chatGPTEffort, m.state.HermesReady, false},
+			statusRow{"GitHub", m.cfg.repoFor(m.state.Account), m.state.GitHubReady, false},
+		)
+	} else {
+		rows = append(rows,
+			statusRow{"Hermes", "checking…", false, false},
+			statusRow{"GitHub", "checking…", false, false},
+		)
+	}
+
 	domain := m.cfg.domainFor(m.state.Account)
 	if domain != "" {
-		detail := domain
-		warn := false
-		if !m.state.HTTPSReady {
-			warn = true
-			if m.state.DNSReady {
-				detail = "SSL pending · " + domain
-			} else {
-				detail = "pending DNS · " + domain
+		if !m.servicesLoaded {
+			rows = append(rows, statusRow{"HTTPS", "checking… · " + domain, false, false})
+		} else {
+			detail := domain
+			warn := false
+			if !m.state.HTTPSReady {
+				warn = true
+				if m.state.DNSReady {
+					detail = "SSL pending · " + domain
+				} else {
+					detail = "pending DNS · " + domain
+				}
 			}
+			rows = append(rows, statusRow{"HTTPS", detail, m.state.HTTPSReady, warn})
 		}
-		rows = append(rows, struct {
-			name, detail string
-			ok, warn     bool
-		}{"HTTPS", detail, m.state.HTTPSReady, warn})
+	} else if m.servicesLoaded {
+		rows = append(rows, statusRow{"Web", "HTTP · no domain", m.state.WebReady, false})
 	} else {
-		rows = append(rows, struct {
-			name, detail string
-			ok, warn     bool
-		}{"Web", "HTTP · no domain", m.state.WebReady, false})
+		rows = append(rows, statusRow{"Web", "checking…", false, false})
 	}
 	if status == "RUNNING" {
-		backup, fresh := backupStatus(m.state.BackupTime)
-		rows = append(rows, struct {
-			name, detail string
-			ok, warn     bool
-		}{"Backup", backup, fresh, !fresh})
+		if m.servicesLoaded {
+			backup, fresh := backupStatus(m.state.BackupTime)
+			rows = append(rows, statusRow{"Backup", backup, fresh, !fresh})
+		} else {
+			rows = append(rows, statusRow{"Backup", "checking…", false, false})
+		}
 	}
 	for _, r := range rows {
 		icon := mutedStyle.Render("·")
@@ -170,10 +193,10 @@ func (m model) renderServer() string {
 		}
 		b.WriteString("\n")
 	}
-	if domain != "" && !m.state.HTTPSReady && !m.state.DNSReady && ip != "" {
+	if m.servicesLoaded && domain != "" && !m.state.HTTPSReady && !m.state.DNSReady && ip != "" {
 		b.WriteString(mutedStyle.Render("  A "+domain+" → "+ip) + "\n")
 	}
-	if len(m.state.CostWarnings) > 0 {
+	if m.servicesLoaded && len(m.state.CostWarnings) > 0 {
 		b.WriteString("\n" + warnStyle.Render("⚠ Potential billing") + "\n")
 		for _, warning := range m.state.CostWarnings {
 			b.WriteString(mutedStyle.Render("  "+warning) + "\n")
@@ -183,10 +206,15 @@ func (m model) renderServer() string {
 	for i, item := range m.menu {
 		b.WriteString(choiceLine(item, i == m.menuPos) + "\n")
 	}
-	if m.statusText != "" {
-		b.WriteString("\n" + spinner(m.frame) + " " + m.statusText)
+	if m.refreshing {
+		b.WriteString("\n" + spinner(m.frame) + " " + mutedStyle.Render("Refreshing cloud"))
+	} else if m.servicesRefreshing {
+		b.WriteString("\n" + spinner(m.frame) + " " + mutedStyle.Render("Checking services"))
+	} else if m.statusText != "" {
+		b.WriteString("\n" + mutedStyle.Render(m.statusText))
 	}
-	b.WriteString("\n" + mutedStyle.Render("↑/↓  enter  r refresh  q"))
+	b.WriteString("\n" + hintLine("↑↓", "move", "Enter", "open"))
+	b.WriteString("\n" + hintLine("A", "accounts", "R", "refresh", "Q", "quit"))
 	return b.String()
 }
 
@@ -239,7 +267,7 @@ func (m model) renderConfirm() string {
 	for i, s := range options {
 		b.WriteString(choiceLine(s, i == m.confirmPos) + "\n")
 	}
-	b.WriteString("\n" + mutedStyle.Render("↑/↓  enter  esc"))
+	b.WriteString("\n" + hintLine("↑↓", "move", "Enter", "select", "Esc", "back"))
 	return b.String()
 }
 
@@ -270,7 +298,7 @@ func (m model) renderDetails() string {
 	if m.lastCommand != "" {
 		b.WriteString("\n\n" + mutedStyle.Render("$ "+m.lastCommand))
 	}
-	b.WriteString("\n\n" + strings.Join(lines, "\n") + "\n\n" + mutedStyle.Render("enter/esc"))
+	b.WriteString("\n\n" + strings.Join(lines, "\n") + "\n\n" + hintLine("Enter/Esc", "back", "A", "accounts"))
 	return b.String()
 }
 
@@ -291,6 +319,8 @@ func (m *model) resetAccountTransient() {
 	m.domainCursor = 0
 	m.steps, m.stepIndex = nil, 0
 	m.lastErr, m.lastOutput, m.lastCommand = nil, "", ""
+	m.refreshing, m.servicesRefreshing = false, false
+	m.cloudLoaded, m.servicesLoaded = false, false
 }
 
 func choiceLine(label string, active bool) string {

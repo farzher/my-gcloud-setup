@@ -167,6 +167,20 @@ type cloudState struct {
 	CostWarnings   []string
 }
 
+type serviceState struct {
+	SSHReady     bool
+	SystemReady  bool
+	HermesReady  bool
+	ChatGPTReady bool
+	GitHubReady  bool
+	WebReady     bool
+	DNSReady     bool
+	HTTPSReady   bool
+	VerifyReady  bool
+	BackupTime   string
+	CostWarnings []string
+}
+
 type existingVM struct{ Project, Name, Zone, Status string }
 
 type commandResult struct{ Stdout, Stderr, Command string }
@@ -177,6 +191,38 @@ var (
 	errDNSRequired         = errors.New("DNS record required")
 )
 
+type detectedMsg struct {
+	state cloudState
+	err   error
+}
+
+type fullDetectedMsg struct {
+	account string
+	state   cloudState
+	err     error
+}
+
+type servicesDetectedMsg struct {
+	account string
+	state   serviceState
+}
+
 func detectCmd(cfg config) tea.Cmd {
-	return func() tea.Msg { s, err := detect(cfg); return detectedMsg{s, err} }
+	return func() tea.Msg {
+		s, err := detectSession()
+		return detectedMsg{s, err}
+	}
+}
+
+func fullDetectCmd(cfg config, account string, accounts []string) tea.Cmd {
+	return func() tea.Msg {
+		s, err := detectCloud(cfg, account, accounts)
+		return fullDetectedMsg{account: account, state: s, err: err}
+	}
+}
+
+func servicesDetectCmd(cfg config, base cloudState) tea.Cmd {
+	return func() tea.Msg {
+		return servicesDetectedMsg{account: base.Account, state: detectServices(cfg, base)}
+	}
 }
