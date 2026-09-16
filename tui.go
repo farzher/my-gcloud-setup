@@ -80,10 +80,11 @@ type model struct {
 	domainCursor  int
 	domainError   string
 
-	steps     []provisionStep
-	stepIndex int
-	busy      bool
-	external  externalAction
+	steps      []provisionStep
+	stepIndex  int
+	busy       bool
+	refreshing bool
+	external   externalAction
 
 	menu    []string
 	menuPos int
@@ -99,11 +100,6 @@ type model struct {
 }
 
 type tickMsg time.Time
-
-type detectedMsg struct {
-	state cloudState
-	err   error
-}
 
 type vmScanMsg struct {
 	account string
@@ -174,6 +170,7 @@ func resumedModel(m model) model {
 	m.screen = screenServer
 	m.external = externalNone
 	m.busy = false
+	m.refreshing = false
 	m.steps = nil
 	m.lastErr, m.lastOutput, m.lastCommand = nil, "", ""
 	m.statusText = "Refreshing"
