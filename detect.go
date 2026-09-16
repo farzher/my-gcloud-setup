@@ -64,19 +64,8 @@ func detect(cfg config) (cloudState, error) {
 	}
 	_ = json.Unmarshal([]byte(r.Stdout), &p)
 	s.ProjectOK = p.ProjectID != ""
-	if s.ProjectOK {
-		if !projectLabelsManaged(p.Labels, s.Account) {
-			return s, fmt.Errorf("project %s is not managed by cloud; refusing to modify it", project)
-		}
-		editor, editorErr := projectEditor(ctx, project, adminEmail)
-		if editorErr != nil {
-			return s, fmt.Errorf("editor access check: %w", editorErr)
-		}
-		if !editor {
-			if _, editorErr = ensureProjectEditor(project); editorErr != nil {
-				return s, fmt.Errorf("editor access setup: %w", editorErr)
-			}
-		}
+	if s.ProjectOK && !projectLabelsManaged(p.Labels, s.Account) {
+		return s, fmt.Errorf("project %s is not managed by cloud; refusing to modify it", project)
 	}
 
 	if cfg.region() == "" {
