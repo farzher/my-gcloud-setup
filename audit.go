@@ -44,10 +44,11 @@ func auditFreeTier(ctx context.Context, cfg config, instance instanceInfo, stati
 		}
 	}
 
-	if r, err := run(ctx, "gcloud", "compute", "instances", "list", "--project="+cfg.Project, "--format=value(name)"); err == nil {
+	if r, err := run(ctx, "gcloud", "compute", "instances", "list", "--project="+cfg.Project, "--format=value(name,zone.basename())"); err == nil {
 		extras := 0
-		for _, name := range uniqueLines(r.Stdout) {
-			if name != vmName {
+		for _, line := range nonEmptyLines(r.Stdout) {
+			fields := strings.Fields(line)
+			if len(fields) < 2 || fields[0] != vmName || fields[1] != cfg.zone() {
 				extras++
 			}
 		}
@@ -56,10 +57,11 @@ func auditFreeTier(ctx context.Context, cfg config, instance instanceInfo, stati
 		}
 	}
 
-	if r, err := run(ctx, "gcloud", "compute", "disks", "list", "--project="+cfg.Project, "--format=value(name)"); err == nil {
+	if r, err := run(ctx, "gcloud", "compute", "disks", "list", "--project="+cfg.Project, "--format=value(name,zone.basename())"); err == nil {
 		extras := 0
-		for _, name := range uniqueLines(r.Stdout) {
-			if name != bootDisk {
+		for _, line := range nonEmptyLines(r.Stdout) {
+			fields := strings.Fields(line)
+			if len(fields) < 2 || fields[0] != bootDisk || fields[1] != cfg.zone() {
 				extras++
 			}
 		}
