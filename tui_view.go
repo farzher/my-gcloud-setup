@@ -11,7 +11,15 @@ func (m *model) syncMenu() {
 	if strings.EqualFold(m.state.Instance.Status, "TERMINATED") || strings.EqualFold(m.state.Instance.Status, "STOPPED") {
 		power = "Start"
 	}
-	m.menu = []string{"Hermes", "Gateway", "SSH", "Console", "Restart", power, "Rebuild", "Destroy", "Account"}
+	domainAction := "Add domain"
+	if m.cfg.domainFor(m.state.Account) != "" {
+		if m.state.HTTPSReady {
+			domainAction = "Domain"
+		} else {
+			domainAction = "Enable HTTPS"
+		}
+	}
+	m.menu = []string{"Hermes", "Gateway", "SSH", "Console", domainAction, "Restart", power, "Rebuild", "Destroy", "Account"}
 	if m.menuPos >= len(m.menu) {
 		m.menuPos = max(0, len(m.menu)-1)
 	}
@@ -33,6 +41,22 @@ func (m model) activateMenu() (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "Console":
 		return m, openBrowserCmd(cloudConsoleURL(m.cfg.Project))
+	case "Add domain", "Domain":
+		m.editingDomain = true
+		m.domainInput = m.cfg.domainFor(m.state.Account)
+		m.domainError = ""
+	case "Enable HTTPS":
+		if m.cfg.domainFor(m.state.Account) == "" {
+			m.editingDomain = true
+			m.domainInput, m.domainError = "", ""
+			return m, nil
+		}
+		m.cfg.setHTTPSDeferred(m.state.Account, false)
+		if err := saveConfig(m.cfg); err != nil {
+			return m.showError(screenServer, err, err.Error())
+		}
+		m.startProvisionAt(11)
+		return m, runStepCmd(11, m.cfg, m.billingID)
 	case "Restart":
 		m.busy, m.statusText = true, "Restarting"
 		return m, lifecycleCmd("Restart", m.cfg, "reset")

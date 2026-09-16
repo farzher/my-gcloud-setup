@@ -18,6 +18,7 @@ func (m model) updateSiteInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.siteError = ""
 		if m.cfg.Project == "" {
 			m.cfg.setSite(m.state.Account, name, domain)
+			m.cfg.setHTTPSDeferred(m.state.Account, false)
 			if err = saveConfig(m.cfg); err != nil {
 				return m.showError(screenServer, err, err.Error())
 			}
@@ -45,6 +46,43 @@ func (m model) updateSiteInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if text != "" && len([]rune(m.siteInput+text)) <= 80 {
 			m.siteInput += text
 			m.siteError = ""
+		}
+		return m, nil
+	}
+}
+
+func (m model) updateDomainInput(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	k := key.String()
+	switch k {
+	case "enter":
+		_, domain, err := parseSite(m.domainInput)
+		if err != nil || domain == "" {
+			m.domainError = "enter a domain like example.com"
+			return m, nil
+		}
+		m.cfg.setDomain(m.state.Account, domain)
+		m.cfg.setHTTPSDeferred(m.state.Account, false)
+		if err = saveConfig(m.cfg); err != nil {
+			return m.showError(screenServer, err, err.Error())
+		}
+		m.editingDomain, m.domainInput, m.domainError = false, "", ""
+		m.startProvisionAt(11)
+		return m, runStepCmd(11, m.cfg, m.billingID)
+	case "esc":
+		m.editingDomain, m.domainInput, m.domainError = false, "", ""
+		return m, nil
+	case "backspace":
+		r := []rune(m.domainInput)
+		if len(r) > 0 {
+			m.domainInput = string(r[:len(r)-1])
+		}
+		m.domainError = ""
+		return m, nil
+	default:
+		text := key.Key().Text
+		if text != "" && len([]rune(m.domainInput+text)) <= 253 {
+			m.domainInput += text
+			m.domainError = ""
 		}
 		return m, nil
 	}
@@ -141,17 +179,15 @@ func (m model) updateServer(k string) (tea.Model, tea.Cmd) {
 			m.busy = true
 			return m, runStepCmd(m.stepIndex, m.cfg, m.billingID)
 		case "s":
-			if errors.Is(m.lastErr, errDNSRequired) {
-				account := m.state.Account
-				m.cfg.setSite(account, m.cfg.nameFor(account), "")
+			if m.cfg.domainFor(m.state.Account) != "" && (errors.Is(m.lastErr, errDNSRequired) || m.stepIndex == 12 || m.stepIndex == 13) {
+				m.cfg.setHTTPSDeferred(m.state.Account, true)
 				if err := saveConfig(m.cfg); err != nil {
 					return m.showError(screenServer, err, err.Error())
 				}
-				// Web was provisioned while a domain was configured. Re-run it with
-				// the domain cleared so nginx and managed project context match the
-				// configuration that Ready verifies.
-				m.startProvisionAt(11)
-				return m, runStepCmd(11, m.cfg, m.billingID)
+				m.startProvisionAt(14)
+				m.steps[12].Detail = "HTTP for now"
+				m.steps[13].Detail = "deferred"
+				return m, runStepCmd(14, m.cfg, m.billingID)
 			}
 		case "d":
 			m.returnScreen = screenServer
@@ -175,13 +211,6 @@ func (m model) updateServer(k string) (tea.Model, tea.Cmd) {
 		m.busy = true
 		m.statusText = "Refreshing"
 		return m, detectCmd(m.cfg)
-	case "n":
-		m.editingSite = true
-		if m.cfg.domainFor(m.state.Account) != "" {
-			m.siteInput = m.cfg.domainFor(m.state.Account)
-		} else {
-			m.siteInput = m.cfg.nameFor(m.state.Account)
-		}
 	case "q":
 		return m, tea.Quit
 	case "enter":
@@ -268,6 +297,7 @@ func (m *model) route() tea.Cmd {
 }
 
 func firstMissingStep(s cloudState, cfg config) int {
+	domainOptional := cfg.domainFor(s.Account) == "" || cfg.httpsDeferredFor(s.Account)
 	checks := []bool{
 		s.ProjectOK,
 		true,
@@ -281,8 +311,8 @@ func firstMissingStep(s cloudState, cfg config) int {
 		s.ChatGPTReady,
 		s.GitHubReady,
 		s.WebReady,
-		cfg.domainFor(s.Account) == "" || s.DNSReady,
-		cfg.domainFor(s.Account) == "" || s.HTTPSReady,
+		domainOptional || s.DNSReady,
+		domainOptional || s.HTTPSReady,
 		s.VerifyReady,
 	}
 	for i, ok := range checks {

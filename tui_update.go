@@ -12,8 +12,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case tea.PasteMsg:
-		if m.editingSite {
-			text := strings.TrimSpace(msg.Content)
+		text := strings.TrimSpace(msg.Content)
+		if m.editingDomain {
+			if text != "" && len([]rune(m.domainInput+text)) <= 253 {
+				m.domainInput += text
+				m.domainError = ""
+			}
+		} else if m.editingSite {
 			if text != "" && len([]rune(m.siteInput+text)) <= 80 {
 				m.siteInput += text
 				m.siteError = ""
@@ -179,6 +184,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	k := key.String()
 	if k == "ctrl+c" {
 		return m, tea.Quit
+	}
+	if m.editingDomain {
+		return m.updateDomainInput(key)
 	}
 	if m.editingSite {
 		return m.updateSiteInput(key)

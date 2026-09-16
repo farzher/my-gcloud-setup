@@ -7,16 +7,17 @@ import (
 )
 
 type config struct {
-	Projects map[string]string `json:"projects,omitempty"`
-	Names    map[string]string `json:"names,omitempty"`
-	Domains  map[string]string `json:"domains,omitempty"`
-	Billing  map[string]string `json:"billing,omitempty"`
-	Regions  map[string]string `json:"regions,omitempty"`
-	Repos    map[string]string `json:"repos,omitempty"`
-	Disabled map[string]bool   `json:"disabled,omitempty"`
-	Account  string            `json:"-"`
-	Project  string            `json:"-"`
-	Repo     string            `json:"-"`
+	Projects      map[string]string `json:"projects,omitempty"`
+	Names         map[string]string `json:"names,omitempty"`
+	Domains       map[string]string `json:"domains,omitempty"`
+	HTTPSDeferred map[string]bool   `json:"https_deferred,omitempty"`
+	Billing       map[string]string `json:"billing,omitempty"`
+	Regions       map[string]string `json:"regions,omitempty"`
+	Repos         map[string]string `json:"repos,omitempty"`
+	Disabled      map[string]bool   `json:"disabled,omitempty"`
+	Account       string            `json:"-"`
+	Project       string            `json:"-"`
+	Repo          string            `json:"-"`
 }
 
 func (c config) projectFor(account string) string { return c.Projects[account] }
@@ -24,6 +25,8 @@ func (c config) projectFor(account string) string { return c.Projects[account] }
 func (c config) nameFor(account string) string { return c.Names[account] }
 
 func (c config) domainFor(account string) string { return c.Domains[account] }
+
+func (c config) httpsDeferredFor(account string) bool { return c.HTTPSDeferred[account] }
 
 func (c config) billingFor(account string) string { return c.Billing[account] }
 
@@ -52,6 +55,24 @@ func (c *config) setSite(account, name, domain string) {
 		c.Domains = map[string]string{}
 	}
 	c.Names[account], c.Domains[account] = name, domain
+}
+
+func (c *config) setDomain(account, value string) {
+	if c.Domains == nil {
+		c.Domains = map[string]string{}
+	}
+	c.Domains[account] = value
+}
+
+func (c *config) setHTTPSDeferred(account string, value bool) {
+	if c.HTTPSDeferred == nil {
+		c.HTTPSDeferred = map[string]bool{}
+	}
+	if value {
+		c.HTTPSDeferred[account] = true
+	} else {
+		delete(c.HTTPSDeferred, account)
+	}
 }
 
 func (c *config) setBilling(account, value string) {
