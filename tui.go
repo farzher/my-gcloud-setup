@@ -116,8 +116,6 @@ type stepDoneMsg struct {
 
 type authDoneMsg struct{ err error }
 
-type externalDoneMsg struct{ err error }
-
 type actionDoneMsg struct {
 	name   string
 	cfg    config
