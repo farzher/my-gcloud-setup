@@ -29,26 +29,80 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.frame++
-		if m.screen == screenBilling && !m.busy && m.frame%40 == 0 {
+		if m.screen == screenBilling && !m.busy && !m.refreshing && m.frame%40 == 0 {
 			m.busy = true
 			return m, tea.Batch(tick(), detectCmd(m.cfg))
 		}
 		return m, tick()
 	case detectedMsg:
 		m.busy = false
-		m.statusText = ""
 		if msg.err != nil {
+			m.refreshing = false
 			back := m.screen
 			if back == screenDetails {
 				back = screenLoading
 			}
 			return m.showError(back, msg.err, msg.err.Error())
 		}
+
 		oldAccount := m.state.Account
-		m.state = msg.state
-		if oldAccount != m.state.Account {
-			m.resetAccountTransient()
+		if oldAccount == msg.state.Account && oldAccount != "" {
+			m.state.Gcloud = msg.state.Gcloud
+			m.state.Account = msg.state.Account
+			m.state.Accounts = msg.state.Accounts
+		} else {
+			m.state = msg.state
+			if oldAccount != m.state.Account {
+				m.resetAccountTransient()
+			}
 		}
+		m.cfg.Account = m.state.Account
+		m.cfg.Project = m.cfg.projectFor(m.state.Account)
+		m.cfg.Repo = m.cfg.repoFor(m.state.Account)
+
+		if !m.state.Gcloud {
+			m.refreshing = false
+			m.statusText = ""
+			m.screen = screenNeedGcloud
+			return m, nil
+		}
+		if m.state.Account == "" {
+			m.refreshing = false
+			m.statusText = ""
+			m.screen = screenAccount
+			m.accountPos = 0
+			return m, nil
+		}
+
+		m.refreshing = true
+		m.statusText = "Checking cloud"
+		if m.screen == screenLoading || oldAccount != m.state.Account {
+			m.screen = screenServer
+			if strings.TrimSpace(m.cfg.nameFor(m.state.Account)) == "" {
+				m.editingSite = true
+				m.siteInput, m.siteError = "", ""
+				m.siteCursor = 0
+			} else if m.cfg.regionFor(m.state.Account) == "" {
+				m.screen = screenLocation
+				m.locationPos = 0
+			}
+		}
+		return m, fullDetectCmd(m.cfg, m.state.Account)
+	case fullDetectedMsg:
+		if msg.account != m.state.Account {
+			return m, nil
+		}
+		m.refreshing = false
+		m.statusText = ""
+		if msg.err != nil {
+			return m.showError(m.screen, msg.err, msg.err.Error())
+		}
+		if msg.state.Account != msg.account {
+			m.busy = true
+			return m, detectCmd(m.cfg)
+		}
+
+		m.state = msg.state
 		m.cfg.Account = m.state.Account
 		m.cfg.Project = m.cfg.projectFor(m.state.Account)
 		m.cfg.Repo = m.cfg.repoFor(m.state.Account)
@@ -64,17 +118,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := saveConfig(m.cfg); err != nil {
 				return m.showError(screenLoading, err, err.Error())
 			}
-			m.busy = true
-			return m, detectCmd(m.cfg)
 		}
 		if m.billingID != "" && !billingHas(m.state.Billing, m.billingID) {
 			m.billingID, m.billingPos = "", 0
 		}
 		m.syncMenu()
-		cmd := m.route()
+
 		var cmds []tea.Cmd
-		if cmd != nil {
-			cmds = append(cmds, cmd)
+		if m.screen != screenAccount && m.screen != screenConfirm && m.screen != screenDetails && !m.editingSite && !m.editingDomain {
+			if cmd := m.route(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 		if m.state.Account != "" && !m.vmScanBusy && m.vmScanAccount != m.state.Account && !m.state.VMExists {
 			m.vmScanBusy = true
@@ -305,6 +359,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case screenServer:
+		if m.refreshing {
+			switch k {
+			case "a":
+				m.screen = screenAccount
+				m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
+			case "q":
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		return m.updateServer(k)
 	case screenConfirm:
 		return m.updateConfirm(k)
