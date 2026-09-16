@@ -69,8 +69,15 @@ func (m model) updateAccount(k string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "enter":
 		if m.accountPos < len(m.state.Accounts) {
+			target := m.state.Accounts[m.accountPos]
+			if target == m.state.Account {
+				m.screen = screenServer
+				return m, m.route()
+			}
 			m.busy = true
-			return m, switchGoogleAccountCmd(m.state.Accounts[m.accountPos])
+			m.screen = screenLoading
+			m.statusText = "Switching account"
+			return m, switchGoogleAccountCmd(target)
 		}
 		if m.accountPos == len(m.state.Accounts) {
 			m.busy = true
@@ -107,6 +114,25 @@ func (m model) updateServer(k string) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		return m, nil
+	}
+	if m.state.VMExists && len(m.steps) == 0 && strings.EqualFold(m.state.Instance.Status, "RUNNING") {
+		if idx := firstMissingStep(m.state, m.cfg); idx >= 0 {
+			switch k {
+			case "enter":
+				m.startProvisionAt(idx)
+				return m, runStepCmd(idx, m.cfg, m.billingID)
+			case "a":
+				m.screen = screenAccount
+				m.accountPos = activeAccountPos(m.state.Accounts, m.state.Account)
+			case "r":
+				m.busy = true
+				m.statusText = "Refreshing"
+				return m, detectCmd(m.cfg)
+			case "q":
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 	}
 	if len(m.steps) > 0 && m.stepIndex < len(m.steps) && m.steps[m.stepIndex].State == 3 {
 		switch k {
@@ -226,20 +252,16 @@ func (m *model) route() tea.Cmd {
 		return nil
 	}
 	if !m.state.VMExists {
-		if m.vmScanAccount != m.state.Account || (m.otherVMCount > 0 && !m.vmWarningAck) {
-			return nil
-		}
-		m.startProvisionAt(0)
-		return runStepCmd(0, m.cfg, m.billingID)
+		m.steps = nil
+		return nil
 	}
 	if !strings.EqualFold(m.state.Instance.Status, "RUNNING") {
 		m.steps = nil
 		return nil
 	}
-	idx := firstMissingStep(m.state, m.cfg)
-	if idx >= 0 {
-		m.startProvisionAt(idx)
-		return runStepCmd(idx, m.cfg, m.billingID)
+	if firstMissingStep(m.state, m.cfg) >= 0 {
+		m.steps = nil
+		return nil
 	}
 	m.steps = nil
 	return nil
