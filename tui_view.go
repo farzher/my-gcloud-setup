@@ -97,7 +97,11 @@ func (m model) View() tea.View {
 func (m model) render() string {
 	switch m.screen {
 	case screenLoading:
-		return m.header() + "\n\n" + spinner(m.frame) + " cloud"
+		label := m.statusText
+		if label == "" {
+			label = "cloud"
+		}
+		return m.header() + "\n\n" + spinner(m.frame) + " " + label
 	case screenNeedGcloud:
 		return m.header() + "\n\n" + badStyle.Render("gcloud not found") + "\n\n" + button("Install gcloud") + "\n\n" + mutedStyle.Render("enter  r  q")
 	case screenAccount:
