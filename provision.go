@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func scanExistingVMs(ctx context.Context, managedProject string) ([]existingVM, int) {
+func scanExistingVMs(ctx context.Context, managedProject, managedZone string) ([]existingVM, int) {
 	r, err := run(ctx, "gcloud", "projects", "list", "--filter=lifecycleState:ACTIVE", "--format=value(projectId)")
 	if err != nil {
 		return nil, 0
@@ -42,7 +42,7 @@ func scanExistingVMs(ctx context.Context, managedProject string) ([]existingVM, 
 				if len(f) == 0 {
 					continue
 				}
-				if project == managedProject && f[0] == vmName {
+				if project == managedProject && f[0] == vmName && len(f) > 1 && f[1] == managedZone {
 					continue
 				}
 				v := existingVM{Project: project, Name: f[0]}
