@@ -74,6 +74,10 @@ type model struct {
 	siteInput   string
 	siteError   string
 
+	editingDomain bool
+	domainInput   string
+	domainError   string
+
 	steps     []provisionStep
 	stepIndex int
 	busy      bool
