@@ -65,10 +65,8 @@ func detect(cfg config) (cloudState, error) {
 	_ = json.Unmarshal([]byte(r.Stdout), &p)
 	s.ProjectOK = p.ProjectID != ""
 	if s.ProjectOK {
-		if p.Labels["cloud-charm"] != "managed" || p.Labels["cloud_account"] != accountHash(s.Account) {
-			if _, labelErr := ensureProjectLabels(project, s.Account); labelErr != nil {
-				return s, fmt.Errorf("project labels: %w", labelErr)
-			}
+		if !projectLabelsManaged(p.Labels, s.Account) {
+			return s, fmt.Errorf("project %s is not managed by cloud; refusing to modify it", project)
 		}
 		editor, editorErr := projectEditor(ctx, project, adminEmail)
 		if editorErr != nil {
