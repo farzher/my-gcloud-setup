@@ -113,7 +113,7 @@ nginx -T 2>/dev/null | grep -Fq ` + shellQuote("ssl_certificate "+cert) + `
 }
 
 func runRemoteScript(cfg config, timeout time.Duration, script string) (commandResult, error) {
-	f, err := os.CreateTemp(".", ".cloud-script-*.sh")
+	f, err := os.CreateTemp("", "cloud-script-*.sh")
 	if err != nil {
 		return commandResult{}, err
 	}
