@@ -116,7 +116,7 @@ func detectServices(cfg config, base cloudState) serviceState {
 	go func() { auditCh <- auditFreeTier(ctx, cfg, base.Instance, base.StaticIP) }()
 
 	if strings.EqualFold(base.Instance.Status, "RUNNING") {
-		probe, _ := runRemoteBash(cfg, 35*time.Second, remoteProbe(cfg, base.StaticIP))
+		probe, _ := runRemoteScript(cfg, 35*time.Second, remoteProbe(cfg, base.StaticIP))
 		for _, line := range nonEmptyLines(probe.Stdout) {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "BACKUP_TIME ") {
