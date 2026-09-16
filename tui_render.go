@@ -23,7 +23,7 @@ func (m model) renderServer() string {
 
 	if m.editingDomain {
 		b.WriteString(titleStyle.Render("Domain") + "\n\n")
-		b.WriteString(accentStyle.Render("› ") + m.domainInput + accentStyle.Render("▌"))
+		b.WriteString(accentStyle.Render("› ") + renderTextInput(m.domainInput, m.domainCursor))
 		if m.domainError != "" {
 			b.WriteString("\n\n" + badStyle.Render(m.domainError))
 		}
@@ -33,7 +33,7 @@ func (m model) renderServer() string {
 
 	if m.editingSite {
 		b.WriteString(titleStyle.Render("Domain / name") + "\n\n")
-		b.WriteString(accentStyle.Render("› ") + m.siteInput + accentStyle.Render("▌"))
+		b.WriteString(accentStyle.Render("› ") + renderTextInput(m.siteInput, m.siteCursor))
 		if m.siteError != "" {
 			b.WriteString("\n\n" + badStyle.Render(m.siteError))
 		}
@@ -125,7 +125,7 @@ func (m model) renderServer() string {
 	}{
 		{"VM", status, m.state.VMExists, false},
 		{"IP", ip, ip != "", false},
-		{"Hermes", chatGPTModel + " · " + chatGPTEffort, m.state.ChatGPTReady, false},
+		{"Hermes", chatGPTModel + " · " + chatGPTEffort, m.state.HermesReady, false},
 		{"GitHub", m.cfg.repoFor(m.state.Account), m.state.GitHubReady, false},
 	}
 	domain := m.cfg.domainFor(m.state.Account)
@@ -188,6 +188,17 @@ func (m model) renderServer() string {
 	}
 	b.WriteString("\n" + mutedStyle.Render("↑/↓  enter  r refresh  q"))
 	return b.String()
+}
+
+func renderTextInput(value string, cursor int) string {
+	r := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(r) {
+		cursor = len(r)
+	}
+	return string(r[:cursor]) + accentStyle.Render("▌") + string(r[cursor:])
 }
 
 func backupStatus(value string) (string, bool) {
@@ -275,7 +286,9 @@ func (m *model) resetAccountTransient() {
 	m.otherVMs, m.otherVMCount, m.vmScanAccount = nil, 0, ""
 	m.vmScanBusy, m.vmWarningAck = false, false
 	m.editingSite, m.siteInput, m.siteError = false, "", ""
+	m.siteCursor = 0
 	m.editingDomain, m.domainInput, m.domainError = false, "", ""
+	m.domainCursor = 0
 	m.steps, m.stepIndex = nil, 0
 	m.lastErr, m.lastOutput, m.lastCommand = nil, "", ""
 }
