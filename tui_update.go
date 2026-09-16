@@ -71,7 +71,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.state.Account != "" && !m.vmScanBusy && m.vmScanAccount != m.state.Account && !m.state.VMExists {
 			m.vmScanBusy = true
-			cmds = append(cmds, scanVMsCmd(m.state.Account, m.cfg.Project))
+			cmds = append(cmds, scanVMsCmd(m.state.Account, m.cfg.Project, m.cfg.zone()))
 		}
 		if len(cmds) == 0 {
 			return m, nil
