@@ -47,7 +47,8 @@ func buildHermesProjectContext(cfg config, domain string) string {
 - The managed Nginx baseline already provides HTTP/2, Brotli/gzip, ETags for Nginx-served files, and efficient proxy/WebSocket transport. Put site-specific Nginx behavior in ops/nginx.conf; do not make persistent edits directly under /etc/nginx.
 - Prefer Nginx direct serving for static/build assets when it is straightforward and correct. Give content-hashed or fingerprinted immutable assets long public immutable caching; use sensible shorter caching or revalidation for mutable/non-hashed assets.
 - Do not give HTML, APIs, authenticated/personalized responses, mutable data, streaming/SSE, or other dynamic content long-lived public caching unless their semantics explicitly make that safe. Preserve WebSocket, range-request, and streaming behavior where used.
-- Use ETag, Last-Modified, or framework-native conditional revalidation where useful. Avoid redundant application compression when Nginx can handle it, and do not waste CPU recompressing formats that are already efficiently compressed.
+- Keep GET /healthz routed to Node even when the rest of a site is served directly by Nginx. Use ETag, Last-Modified, or framework-native conditional revalidation where useful.
+- Avoid redundant application compression when Nginx can handle it, and do not waste CPU recompressing formats that are already efficiently compressed.
 - Keep the Node production path lightweight, avoid unnecessary runtime work for static requests, and optimize for low latency, low bandwidth, and low CPU/RAM use on this 1 GB VM.
 - Keep GET /healthz lightweight and unauthenticated; return 200 only when the web app and PostgreSQL are healthy, and report both statuses in the response.
 - After code changes, run ship-web "<short commit message>", then reply when it succeeds. deploy-web validates and reloads Nginx before restarting/checking Node.
