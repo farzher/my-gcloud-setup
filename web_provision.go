@@ -64,6 +64,22 @@ cat >ops/backup.sh <<'BACKUP'
 ` + buildBackupScript() + `BACKUP
 cat >ops/restore.sh <<'RESTORE'
 ` + buildRestoreScript() + `RESTORE
+if [ ! -f ops/nginx.conf ]; then
+cat >ops/nginx.conf <<'NGINX_APP'
+# Site-specific Nginx rules. This file is tracked with the app and is included
+# inside the managed server block. Hermes may adapt it to the site's needs.
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+NGINX_APP
+fi
 chmod +x ops/deploy.sh ops/ship.sh ops/status.sh ops/backup.sh ops/restore.sh
 ln -sf "$APP/ops/deploy.sh" /usr/local/bin/deploy-web
 ln -sf "$APP/ops/ship.sh" /usr/local/bin/ship-web
@@ -81,6 +97,7 @@ WorkingDirectory=/website/app
 Environment=PORT=3000
 Environment=DATA_DIR=/website/data
 Environment=DATABASE_URL=postgresql:///web?host=/var/run/postgresql
+Environment=NODE_ENV=production
 Environment=NODE_OPTIONS=--max-old-space-size=224
 ExecStart=/usr/bin/npm start
 Restart=on-failure
@@ -122,19 +139,63 @@ systemctl daemon-reload
 systemctl enable web.service >/dev/null
 systemctl disable --now web-backup.timer >/dev/null 2>&1 || true
 
+# Keep universal transport/compression behavior in the managed system config.
+# Site-specific cache/static-delivery policy belongs in tracked ops/nginx.conf.
+if ! dpkg-query -W libnginx-mod-http-brotli-filter libnginx-mod-http-brotli-static >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y --no-install-recommends libnginx-mod-http-brotli-filter libnginx-mod-http-brotli-static
+  apt-get clean
+  rm -rf /var/lib/apt/lists/*
+fi
+cat >/etc/nginx/conf.d/90-cloud-performance.conf <<'NGINX_PERF'
+server_tokens off;
+http2 on;
+etag on;
+
+gzip_vary on;
+gzip_proxied any;
+gzip_comp_level 5;
+gzip_min_length 1024;
+gzip_static on;
+gzip_types
+    text/plain
+    text/css
+    application/json
+    application/javascript
+    application/manifest+json
+    application/xml
+    application/rss+xml
+    application/wasm
+    image/svg+xml;
+
+brotli on;
+brotli_comp_level 5;
+brotli_min_length 1024;
+brotli_static on;
+brotli_types
+    text/plain
+    text/css
+    text/html
+    application/json
+    application/javascript
+    application/manifest+json
+    application/xml
+    application/rss+xml
+    application/wasm
+    image/svg+xml;
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      '';
+}
+NGINX_PERF
+
 cat >/etc/nginx/sites-available/web <<'NGINX'
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name ` + serverName + `;
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+    include /website/app/ops/nginx.conf;
 }
 NGINX
 ln -sf /etc/nginx/sites-available/web /etc/nginx/sites-enabled/web

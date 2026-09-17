@@ -26,6 +26,8 @@ check_ready() {
   psql -d web -tAc 'SELECT 1' 2>/dev/null | grep -qx 1
 }
 
+nginx -t >/dev/null
+systemctl reload nginx
 if ! systemctl restart web; then
   echo 'Web service failed to restart.' >&2
   /usr/local/bin/server-status --logs >&2 || true
