@@ -25,6 +25,7 @@ func buildHermesProjectContext(cfg config, domain string) string {
 - Persistent files: /website/data via DATA_DIR
 - Structured state: PostgreSQL database web
 - Runtime: Node.js + systemd + Nginx on a 1 GB VM
+- Site-specific Nginx rules: /website/app/ops/nginx.conf
 - Ship changes: /usr/local/bin/ship-web
 - Deploy current checkout: /usr/local/bin/deploy-web
 - Status: /usr/local/bin/server-status
@@ -42,8 +43,14 @@ func buildHermesProjectContext(cfg config, domain string) string {
 - Put durable file bytes in DATA_DIR and structured/queryable state in PostgreSQL. Never put runtime data in the app repository.
 - Tracked static assets belong in the app repo; mutable, generated, or user-created files belong under DATA_DIR and should be served from there rather than copied into the repo.
 - Before shipping, remove discarded static-asset variants that are no longer referenced or intentionally retained.
+- Performance is a standing production requirement. Inspect the actual framework, routes, build output, and content semantics and choose the fastest safe delivery/caching strategy instead of applying one cache policy blindly.
+- The managed Nginx baseline already provides HTTP/2, Brotli/gzip, ETags for Nginx-served files, and efficient proxy/WebSocket transport. Put site-specific Nginx behavior in ops/nginx.conf; do not make persistent edits directly under /etc/nginx.
+- Prefer Nginx direct serving for static/build assets when it is straightforward and correct. Give content-hashed or fingerprinted immutable assets long public immutable caching; use sensible shorter caching or revalidation for mutable/non-hashed assets.
+- Do not give HTML, APIs, authenticated/personalized responses, mutable data, streaming/SSE, or other dynamic content long-lived public caching unless their semantics explicitly make that safe. Preserve WebSocket, range-request, and streaming behavior where used.
+- Use ETag, Last-Modified, or framework-native conditional revalidation where useful. Avoid redundant application compression when Nginx can handle it, and do not waste CPU recompressing formats that are already efficiently compressed.
+- Keep the Node production path lightweight, avoid unnecessary runtime work for static requests, and optimize for low latency, low bandwidth, and low CPU/RAM use on this 1 GB VM.
 - Keep GET /healthz lightweight and unauthenticated; return 200 only when the web app and PostgreSQL are healthy, and report both statuses in the response.
-- After code changes, run ship-web "<short commit message>", then reply when it succeeds.
+- After code changes, run ship-web "<short commit message>", then reply when it succeeds. deploy-web validates and reloads Nginx before restarting/checking Node.
 - If ship-web or deploy-web fails because of the code or dependencies you changed, diagnose the failure, fix it, and retry. Do not stop at the first self-caused failure.
 - If the failure is external or infrastructural (for example auth, permissions, disk, database service, network, or an operation lock), or cannot be safely fixed from the requested change, report it instead of making unrelated server changes.
 - Backups are automatic. Run backup-web when explicitly asked for a snapshot; restore only when explicitly asked.
