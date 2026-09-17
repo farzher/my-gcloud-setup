@@ -152,6 +152,7 @@ server_tokens off;
 http2 on;
 etag on;
 
+gzip on;
 gzip_vary on;
 gzip_proxied any;
 gzip_comp_level 5;
