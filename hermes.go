@@ -43,7 +43,7 @@ func buildHermesProjectContext(cfg config, domain string) string {
 - Put durable file bytes in DATA_DIR and structured/queryable state in PostgreSQL. Never put runtime data in the app repository.
 - Tracked static assets belong in the app repo; mutable, generated, or user-created files belong under DATA_DIR and should be served from there rather than copied into the repo.
 - Before shipping, remove discarded static-asset variants that are no longer referenced or intentionally retained.
-- Treat production performance as a standing requirement: keep ops/nginx.conf appropriately optimized for the site's actual architecture and content whenever relevant, while preserving correct application behavior and /healthz.
+- Treat production performance as a standing requirement: keep ops/nginx.conf appropriately optimized for the site's actual architecture and content whenever relevant, without allowing stale deployments, while preserving correct application behavior and /healthz.
 - Keep GET /healthz lightweight and unauthenticated; return 200 only when the web app and PostgreSQL are healthy, and report both statuses in the response.
 - After code changes, run ship-web "<short commit message>", then reply when it succeeds. deploy-web validates and reloads Nginx before restarting/checking Node.
 - If ship-web or deploy-web fails because of the code or dependencies you changed, diagnose the failure, fix it, and retry. Do not stop at the first self-caused failure.
