@@ -105,9 +105,12 @@ func runChatGPTAuth(project string) error {
 		return fmt.Errorf("VM zone not found")
 	}
 
-	// Never make the user authorize again when the remote Hermes credential
-	// store already has a working Codex login.
+	// The persisted auth store is cheap to inspect and avoids a full Hermes
+	// startup just to learn that the user is already logged in.
 	if loggedIn, _ := chatGPTAuthStatus(project, zone); loggedIn {
+		if _, err := configureChatGPT(project, zone); err != nil {
+			return err
+		}
 		fmt.Fprintln(os.Stdout, "ChatGPT already logged in.")
 		return nil
 	}
@@ -132,36 +135,41 @@ func runChatGPTAuth(project string) error {
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 
-	poll := time.NewTimer(5 * time.Second)
+	poll := time.NewTimer(3 * time.Second)
 	defer poll.Stop()
 	deadline := time.NewTimer(15 * time.Minute)
 	defer deadline.Stop()
 
+	finish := func() error {
+		if _, err := configureChatGPT(project, zone); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stdout, "ChatGPT login confirmed.")
+		return nil
+	}
+
 	for {
 		select {
-		case err := <-done:
-			if err == nil {
-				return nil
-			}
-			// The SSH/device-code process can fail to exit after credentials were
-			// already committed. Treat verified remote auth as success.
+		case processErr := <-done:
 			if loggedIn, _ := chatGPTAuthStatus(project, zone); loggedIn {
-				return nil
+				return finish()
 			}
-			return err
+			if processErr != nil {
+				return processErr
+			}
+			return fmt.Errorf("ChatGPT login finished without saved credentials")
 		case <-poll.C:
 			if loggedIn, _ := chatGPTAuthStatus(project, zone); loggedIn {
 				_ = cmd.Process.Kill()
 				<-done
-				fmt.Fprintln(os.Stdout, "ChatGPT login confirmed.")
-				return nil
+				return finish()
 			}
-			poll.Reset(5 * time.Second)
+			poll.Reset(3 * time.Second)
 		case <-deadline.C:
 			if loggedIn, _ := chatGPTAuthStatus(project, zone); loggedIn {
 				_ = cmd.Process.Kill()
 				<-done
-				return nil
+				return finish()
 			}
 			_ = cmd.Process.Kill()
 			<-done
@@ -171,13 +179,14 @@ func runChatGPTAuth(project string) error {
 }
 
 func chatGPTAuthStatus(project, zone string) (bool, error) {
-	r, err := runTimeout(30*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+project, "--zone="+zone,
-		"--command=sudo -n -i hermes auth status openai-codex", "--quiet")
+	probe := "python3 -c " + shellQuote(chatGPTAuthProbePython()) + " >/dev/null 2>&1"
+	remote := "sudo -n bash -lc " + shellQuote("if "+probe+"; then echo logged; else echo missing; fi")
+	r, err := runTimeout(15*time.Second, "gcloud", "compute", "ssh", vmName,
+		"--project="+project, "--zone="+zone, "--command="+remote, "--quiet")
 	if err != nil {
 		return false, err
 	}
-	return chatGPTLoggedIn(usefulOutput(r)), nil
+	return strings.Contains(strings.ToLower(r.Stdout), "logged"), nil
 }
 
 func renderQR(out io.Writer, url string) {
