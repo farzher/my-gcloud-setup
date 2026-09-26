@@ -284,12 +284,28 @@ func loadConfig() (config, error) {
 
 func saveConfig(c config) error {
 	p := configPath()
-	if e := os.MkdirAll(filepath.Dir(p), 0700); e != nil {
-		return e
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
 	}
-	data, e := json.MarshalIndent(c, "", "  ")
-	if e != nil {
-		return e
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
 	}
-	return os.WriteFile(p, data, 0600)
+	f, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if _, err = f.Write(data); err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(tmp, p)
 }
