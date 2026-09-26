@@ -157,10 +157,13 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 	}
 
 	if hadAccess {
-		fallback, _ := run(ctx, "gcloud", "compute", "instances", "add-access-config", vmName,
+		rollback, rollbackErr := run(ctx, "gcloud", "compute", "instances", "add-access-config", vmName,
 			"--project="+cfg.Project, "--zone="+cfg.zone(), "--network-interface="+nicName, "--access-config-name="+accessName,
 			"--network-tier=PREMIUM", "--quiet")
-		all = mergeResult(all, fallback)
+		all = mergeResult(all, rollback)
+		if rollbackErr != nil {
+			return all, ip, fmt.Errorf("assign static IP %s: %v; restore previous external access: %w", ip, assignErr, rollbackErr)
+		}
 	}
 	return all, ip, fmt.Errorf("assign static IP %s: %w", ip, assignErr)
 }
