@@ -73,7 +73,7 @@ func runExternalSession(action externalAction, cfg config) error {
 			"hermes gateway uninstall >/dev/null 2>&1 || true; " +
 			"hermes gateway install --system --run-as-user root --force --start-now --start-on-login; " +
 			"install -d /etc/systemd/system/hermes-gateway.service.d; " +
-			"printf '[Service]\\nEnvironment=\"HERMES_HOME=/root/.hermes\"\\nEnvironment=\"PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin\"\\nCPUWeight=100\\nMemoryHigh=360M\\nMemoryMax=480M\\nTasksMax=192\\n' >/etc/systemd/system/hermes-gateway.service.d/cloud.conf; " +
+			"printf %s " + shellQuote(gatewayServiceDropIn) + " >/etc/systemd/system/hermes-gateway.service.d/cloud.conf; " +
 			"systemctl daemon-reload; " +
 			"hermes gateway restart --system; " +
 			"hermes gateway status --system"
