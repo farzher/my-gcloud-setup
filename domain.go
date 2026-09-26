@@ -56,6 +56,7 @@ systemctl enable --now certbot.timer >/dev/null 2>&1 || true
 
 func verifyServer(cfg config) (commandResult, error) {
 	domain := cfg.domainFor(cfg.Account)
+	systemHash := systemManagedHash()
 	hermesHash := hermesManagedHash()
 	deployHash := contentHash(buildDeployScript())
 	shipHash := contentHash(buildShipScript())
@@ -71,6 +72,7 @@ trap 'echo "verify failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 [ "$ID" = debian ] && [ "${VERSION_ID%%.*}" = 13 ]
 swapon --show=NAME --noheadings | grep -x /swapfile >/dev/null
 [ "$(stat -c %s /swapfile)" = 1073741824 ]
+[ "$(cat ` + shellQuote(systemManagedHashFile) + `)" = "` + systemHash + `" ]
 command -v node >/dev/null
 command -v psql >/dev/null
 command -v nginx >/dev/null
