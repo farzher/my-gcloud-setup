@@ -77,7 +77,17 @@ cat >/root/.hermes/SOUL.md <<'SOUL'
 ` + hermesSoul + `SOUL
 fi
 
-bash "$INSTALLER" --non-interactive --skip-browser
+# Keep the server install lean. Upstream folded the old path stage into a
+# products stage that also builds the TUI/web apps; those products are not
+# needed by this headless server and are too heavy for the 1 GB VM.
+for stage in repository venv python-deps config; do
+  bash "$INSTALLER" --stage "$stage" --skip-browser
+done
+
+# Recreate the retired path stage directly with Hermes' current standalone
+# source-launcher publisher, without running the heavy products stage.
+python3 /root/.hermes/hermes-agent/hermes_cli/_launchers.py /root/.local/bin
+bash "$INSTALLER" --stage complete --skip-browser
 
 HERMES="$(command -v hermes)"
 [ -n "$HERMES" ]
