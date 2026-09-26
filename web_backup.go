@@ -9,7 +9,7 @@ DATA=/website/data
 STATE=/var/lib/website
 REMOTE="$(git -C "$APP" remote get-url origin)"
 exec 9>/run/lock/web-state.lock
-flock -n 9 || { echo 'Another deploy, backup, or restore is already running.' >&2; exit 1; }
+flock -w 300 9 || { echo 'Timed out waiting for another deploy, backup, or restore.' >&2; exit 1; }
 install -d -m 0750 "$DATA"
 install -d -m 0755 "$STATE"
 if find "$DATA" -type l -print -quit | grep -q .; then
