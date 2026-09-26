@@ -15,10 +15,16 @@ import (
 	"time"
 )
 
-func gcloudExists(ctx context.Context, args ...string) bool {
+func gcloudResourceExists(ctx context.Context, args ...string) (bool, commandResult, error) {
 	args = append(args, "--format=value(name)")
-	_, e := run(ctx, "gcloud", args...)
-	return e == nil
+	r, err := run(ctx, "gcloud", args...)
+	if err == nil {
+		return true, r, nil
+	}
+	if looksNotFound(usefulOutput(r)) {
+		return false, r, nil
+	}
+	return false, r, err
 }
 
 func mergeResult(a, b commandResult) commandResult {
