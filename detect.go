@@ -170,12 +170,13 @@ if python3 -c ` + shellQuote(chatGPTAuthProbePython()) + ` >/dev/null 2>&1 && [ 
 `
 	}
 	script += `WEB_HEALTHY=0
-if [ -x /usr/local/bin/server-status ]; then
-  for _ in $(seq 1 20); do
-    if /usr/local/bin/server-status >/dev/null 2>&1; then WEB_HEALTHY=1; break; fi
-    sleep 1
-  done
-fi
+for _ in $(seq 1 20); do
+  if curl -fsS -o /dev/null --connect-timeout 1 --max-time 1 http://127.0.0.1:3000/healthz; then
+    WEB_HEALTHY=1
+    break
+  fi
+  sleep 0.5
+done
 if [ ! -d /website/.git ] && [ -d /website/data ] && [ -x /website/app/ops/deploy.sh ] && [ -x /website/app/ops/ship.sh ] && [ -x /website/app/ops/status.sh ] && [ -x /website/app/ops/backup.sh ] && [ -x /website/app/ops/restore.sh ] && [ -s /website/app/AGENTS.md ] && [ -f /var/lib/website/initialized ] && [ -x /usr/local/bin/deploy-web ] && [ -x /usr/local/bin/ship-web ] && [ -x /usr/local/bin/server-status ] && [ -x /usr/local/bin/backup-web ] && [ -x /usr/local/bin/restore-web ] && systemctl is-enabled --quiet web.service && systemctl is-active --quiet web.service && systemctl is-enabled --quiet web-backup.timer && systemctl is-active --quiet web-backup.timer && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql && [ "$(sha256sum /website/app/ops/deploy.sh 2>/dev/null | awk '{print $1}')" = "` + deployHash + `" ] && [ "$(sha256sum /website/app/ops/ship.sh 2>/dev/null | awk '{print $1}')" = "` + shipHash + `" ] && [ "$(sha256sum /website/app/ops/status.sh 2>/dev/null | awk '{print $1}')" = "` + statusHash + `" ] && [ "$(sha256sum /website/app/ops/backup.sh 2>/dev/null | awk '{print $1}')" = "` + backupHash + `" ] && [ "$(sha256sum /website/app/ops/restore.sh 2>/dev/null | awk '{print $1}')" = "` + restoreHash + `" ] && [ "$(sha256sum /website/app/AGENTS.md 2>/dev/null | awk '{print $1}')" = "` + contextHash + `" ] && nginx -t >/dev/null 2>&1 && nginx -T 2>/dev/null | grep -Fq 'proxy_pass http://127.0.0.1:3000;' && [ "$WEB_HEALTHY" = 1 ]; then echo READY_WEB; fi
 if [ -s /var/lib/website/last-backup-success ]; then printf 'BACKUP_TIME %s\n' "$(cat /var/lib/website/last-backup-success)"; fi
 `
