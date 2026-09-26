@@ -35,12 +35,18 @@ func ensureGitHub(cfg config) (config, commandResult, error) {
 
 	if cfg.Repo == "" {
 		if existing := discoverServerRepo(cfg); existing != "" {
-			if r, viewErr := runTimeout(20*time.Second, gh, "repo", "view", existing, "--json", "isPrivate", "--jq", ".isPrivate"); viewErr == nil && strings.TrimSpace(r.Stdout) == "true" {
-				all = mergeResult(all, r)
+			r, viewErr := runTimeout(20*time.Second, gh, "repo", "view", existing, "--json", "isPrivate", "--jq", ".isPrivate")
+			all = mergeResult(all, r)
+			if viewErr == nil {
+				if strings.TrimSpace(r.Stdout) != "true" {
+					return cfg, all, errors.New("server GitHub repository is not private")
+				}
 				cfg.setRepo(cfg.Account, existing)
 				if saveErr := saveConfig(cfg); saveErr != nil {
 					return cfg, all, saveErr
 				}
+			} else if !looksNotFound(usefulOutput(r)) {
+				return cfg, all, viewErr
 			}
 		}
 	}
@@ -59,8 +65,13 @@ func ensureGitHub(cfg config) (config, commandResult, error) {
 				name = fmt.Sprintf("%s-%d", base, i+1)
 			}
 			full := githubOwner + "/" + name
-			if _, viewErr := runTimeout(20*time.Second, gh, "repo", "view", full, "--json", "name"); viewErr == nil {
+			view, viewErr := runTimeout(20*time.Second, gh, "repo", "view", full, "--json", "name")
+			all = mergeResult(all, view)
+			if viewErr == nil {
 				continue
+			}
+			if !looksNotFound(usefulOutput(view)) {
+				return cfg, all, viewErr
 			}
 			r, createErr := runTimeout(60*time.Second, gh, "repo", "create", full, "--private", "--disable-issues", "--disable-wiki")
 			all = mergeResult(all, r)
@@ -80,6 +91,9 @@ func ensureGitHub(cfg config) (config, commandResult, error) {
 		r, viewErr := runTimeout(20*time.Second, gh, "repo", "view", cfg.Repo, "--json", "isPrivate", "--jq", ".isPrivate")
 		all = mergeResult(all, r)
 		if viewErr != nil {
+			if !looksNotFound(usefulOutput(r)) {
+				return cfg, all, viewErr
+			}
 			create, createErr := runTimeout(60*time.Second, gh, "repo", "create", cfg.Repo, "--private", "--disable-issues", "--disable-wiki")
 			all = mergeResult(all, create)
 			if createErr != nil {
@@ -118,13 +132,14 @@ Host github.com
   User git
   IdentityFile /root/.ssh/github-web
   IdentitiesOnly yes
+  BatchMode yes
+  StrictHostKeyChecking yes
+  ConnectTimeout 10
+  ServerAliveInterval 15
+  ServerAliveCountMax 3
 SSHCFG
 chmod 600 /root/.ssh/config
 
-if [ -d /website/.git ]; then
-  echo 'Old /website repository layout detected. Rebuild the server to use /website/app.' >&2
-  exit 1
-fi
 install -d -m 0755 /website
 install -d -m 0750 /website/data
 if [ ! -d /website/app/.git ]; then
