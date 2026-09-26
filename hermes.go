@@ -9,9 +9,10 @@ import (
 // SOUL.md is a bootstrap default; evolved SOUL, memory, and skills are preserved by backups.
 
 const (
-	chatGPTModel          = "gpt-5.6-sol"
-	chatGPTEffort         = "medium"
-	hermesManagedHashFile = "/root/.hermes/.managed-config-hash"
+	chatGPTModel           = "gpt-5.6-sol"
+	chatGPTEffort          = "medium"
+	hermesManagedHashFile  = "/root/.hermes/.managed-config-hash"
+	chatGPTManagedHashFile = "/root/.hermes/.managed-chatgpt-hash"
 )
 
 const hermesSoul = `You are Farzher's production web developer.
@@ -54,6 +55,104 @@ func buildHermesProjectContext(cfg config, domain string) string {
 	return context
 }
 
+func buildHermesManagedConfigModule() string {
+	return `from hermes_cli.config import read_raw_config, save_config
+from tools.skills_sync_bundled_ops import remove_pristine_bundled_skills
+
+cfg = read_raw_config()
+
+def set_value(path, value):
+    node = cfg
+    parts = path.split(".")
+    for part in parts[:-1]:
+        child = node.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            node[part] = child
+        node = child
+    node[parts[-1]] = value
+
+settings = {
+    "agent.disabled_toolsets": ["browser", "computer_use", "code_execution", "delegation", "vision"],
+    "agent.tool_use_enforcement": True,
+    "tool_output.max_bytes": 30000,
+    "tool_output.max_lines": 800,
+    "approvals.mode": "off",
+    "approvals.cron_mode": "approve",
+    "approvals.single_query_mode": "approve",
+    "approvals.mcp_reload_confirm": False,
+    "approvals.destructive_slash_confirm": False,
+    "skills.write_approval": False,
+    "memory.memory_enabled": True,
+    "memory.user_profile_enabled": True,
+    "memory.write_approval": False,
+    "sessions.auto_prune": True,
+    "sessions.retention_days": 30,
+    "sessions.vacuum_after_prune": True,
+    "sessions.min_vacuum_interval_days": 30,
+    "sessions.min_interval_hours": 24,
+    "gateway.write_sessions_json": False,
+}
+for path, value in settings.items():
+    set_value(path, value)
+
+save_config(cfg, merge_existing=False)
+remove_pristine_bundled_skills(dry_run=False)
+`
+}
+
+func buildChatGPTConfigModule() string {
+	return `from hermes_cli.config import read_raw_config, save_config
+
+cfg = read_raw_config()
+
+def set_value(path, value):
+    node = cfg
+    parts = path.split(".")
+    for part in parts[:-1]:
+        child = node.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            node[part] = child
+        node = child
+    node[parts[-1]] = value
+
+def unset_value(path):
+    node = cfg
+    parts = path.split(".")
+    for part in parts[:-1]:
+        node = node.get(part)
+        if not isinstance(node, dict):
+            return
+    node.pop(parts[-1], None)
+
+set_value("model.provider", "openai-codex")
+set_value("model.default", "` + chatGPTModel + `")
+set_value("agent.reasoning_effort", "` + chatGPTEffort + `")
+unset_value("model.base_url")
+save_config(cfg, merge_existing=False)
+`
+}
+
+func chatGPTAuthProbePython() string {
+	return `import json, sys
+from pathlib import Path
+try:
+    data = json.loads(Path("/root/.hermes/auth.json").read_text(encoding="utf-8-sig"))
+except Exception:
+    raise SystemExit(1)
+providers = data.get("providers") if isinstance(data.get("providers"), dict) else {}
+entry = providers.get("openai-codex") if isinstance(providers.get("openai-codex"), dict) else {}
+tokens = entry.get("tokens") if isinstance(entry.get("tokens"), dict) else {}
+pool = data.get("credential_pool") if isinstance(data.get("credential_pool"), dict) else {}
+rows = pool.get("openai-codex") if isinstance(pool.get("openai-codex"), list) else []
+logged_in = bool(tokens.get("access_token")) or any(
+    isinstance(row, dict) and row.get("access_token") for row in rows
+)
+raise SystemExit(0 if logged_in else 1)
+`
+}
+
 func buildHermesInstallScriptBody() string {
 	return `#!/bin/bash
 set -Eeuo pipefail
@@ -68,62 +167,52 @@ export CMAKE_BUILD_PARALLEL_LEVEL=1
 export CARGO_BUILD_JOBS=1
 
 mkdir -p /root/.hermes
+touch /root/.hermes/.no-bundled-skills
 if [ ! -s /root/.hermes/SOUL.md ]; then
 cat >/root/.hermes/SOUL.md <<'SOUL'
 ` + hermesSoul + `SOUL
 fi
 
-# A managed-config hash change means our desired Hermes settings changed; it
-# does not mean Hermes itself needs reinstalling. Reuse a working installation
-# and only run the low-memory installer when the command is missing/broken.
+MANAGED_MODULE=/root/.hermes/hermes-agent/_cloud_managed_config.py
+INSTALLER=""
+trap 'rm -f "$MANAGED_MODULE"; if [ -n "${INSTALLER:-}" ]; then rm -f "$INSTALLER"; fi' EXIT
+
+# A managed-config hash change means our settings changed, not Hermes itself.
+# Reuse any published Hermes command and install only when it is absent.
 HERMES="$(command -v hermes || true)"
-if [ -z "$HERMES" ] || ! hermes --version >/dev/null 2>&1; then
+if [ -z "$HERMES" ]; then
   INSTALLER="$(mktemp)"
-  trap 'rm -f "$INSTALLER"' EXIT
   curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "$INSTALLER"
 
-  # Keep the server install lean. Upstream folded the old path stage into a
-  # products stage that also builds the TUI/web apps; those products are not
-  # needed by this headless server and are too heavy for the 1 GB VM.
+  # Keep the server install lean. Do not run upstream's products stage: it
+  # builds TUI/web products that this headless 1 GB server does not need.
   for stage in repository venv python-deps config; do
     bash "$INSTALLER" --stage "$stage" --skip-browser
   done
 
-  # Recreate the retired path stage directly with Hermes' current standalone
-  # source-launcher publisher, without running the heavy products stage.
+  # Publish only the command launchers, then mark the bootstrap complete.
   python3 /root/.hermes/hermes-agent/hermes_cli/_launchers.py /root/.local/bin
   bash "$INSTALLER" --stage complete --skip-browser
   HERMES="$(command -v hermes)"
 fi
 [ -n "$HERMES" ]
-hermes skills opt-out --remove --yes >/dev/null 2>&1 || hermes skills opt-out >/dev/null
 
-hermes config set agent.disabled_toolsets '["browser","computer_use","code_execution","delegation","vision"]' >/dev/null
-hermes config set agent.tool_use_enforcement true >/dev/null
-hermes config set tool_output.max_bytes 30000 >/dev/null
-hermes config set tool_output.max_lines 800 >/dev/null
-hermes config set approvals.mode off >/dev/null
-hermes config set approvals.cron_mode approve >/dev/null
-hermes config set approvals.single_query_mode approve >/dev/null
-hermes config set approvals.mcp_reload_confirm false >/dev/null
-hermes config set approvals.destructive_slash_confirm false >/dev/null
-hermes config set skills.write_approval false >/dev/null
-hermes config set memory.memory_enabled true >/dev/null
-hermes config set memory.user_profile_enabled true >/dev/null
-hermes config set memory.write_approval false >/dev/null
-hermes config set sessions.auto_prune true >/dev/null
-hermes config set sessions.retention_days 30 >/dev/null
-hermes config set sessions.vacuum_after_prune true >/dev/null
-hermes config set sessions.min_vacuum_interval_days 30 >/dev/null
-hermes config set sessions.min_interval_hours 24 >/dev/null
-hermes config set gateway.write_sessions_json false >/dev/null
-
-hermes --version
+# One Hermes startup applies every managed setting. Starting Hermes repeatedly
+# is extremely expensive on e2-micro because each launch performs source/runtime
+# bookkeeping, so never shell out once per config key.
+cat >"$MANAGED_MODULE" <<'PY'
+` + buildHermesManagedConfigModule() + `PY
+hermes --run-module _cloud_managed_config >/dev/null
+rm -f "$MANAGED_MODULE"
 `
 }
 
 func hermesManagedHash() string {
 	return contentHash(buildHermesInstallScriptBody())
+}
+
+func chatGPTManagedHash() string {
+	return contentHash("openai-codex\n" + chatGPTModel + "\n" + chatGPTEffort + "\n")
 }
 
 func buildHermesInstallScript() string {
@@ -134,16 +223,31 @@ func installHermes(cfg config) (commandResult, error) {
 	return runRemoteScript(cfg, 30*time.Minute, buildHermesInstallScript())
 }
 
+func configureChatGPT(project, zone string) (commandResult, error) {
+	module := "/root/.hermes/hermes-agent/_cloud_chatgpt_config.py"
+	script := `set -Eeuo pipefail
+export PATH="/root/.local/bin:/usr/local/bin:$PATH"
+MODULE=` + shellQuote(module) + `
+trap 'rm -f "$MODULE"' EXIT
+cat >"$MODULE" <<'PY'
+` + buildChatGPTConfigModule() + `PY
+hermes --run-module _cloud_chatgpt_config >/dev/null
+printf '%s\\n' ` + shellQuote(chatGPTManagedHash()) + ` >` + shellQuote(chatGPTManagedHashFile) + `
+`
+	remote := "sudo -n -i bash -lc " + shellQuote(script)
+	return runTimeout(90*time.Second, "gcloud", "compute", "ssh", vmName,
+		"--project="+project, "--zone="+zone, "--command="+remote, "--quiet")
+}
+
 func ensureChatGPT(cfg config) (commandResult, error) {
-	status, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+cfg.zone(), "--command=sudo -n -i hermes auth status openai-codex", "--quiet")
-	if err != nil || !chatGPTLoggedIn(usefulOutput(status)) {
-		return status, errChatGPTAuthRequired
+	loggedIn, err := chatGPTAuthStatus(cfg.Project, cfg.zone())
+	if err != nil {
+		return commandResult{}, err
 	}
-	remote := `sudo -n -i bash -lc 'set -e; hermes config set model.provider openai-codex >/dev/null; hermes config set model.default ` + chatGPTModel + ` >/dev/null; hermes config set agent.reasoning_effort ` + chatGPTEffort + ` >/dev/null; hermes config unset model.base_url >/dev/null 2>&1 || true'`
-	configured, err := runTimeout(45*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+cfg.Project, "--zone="+cfg.zone(), "--command="+remote, "--quiet")
-	return mergeResult(status, configured), err
+	if !loggedIn {
+		return commandResult{}, errChatGPTAuthRequired
+	}
+	return configureChatGPT(cfg.Project, cfg.zone())
 }
 
 func chatGPTLoggedIn(output string) bool {
