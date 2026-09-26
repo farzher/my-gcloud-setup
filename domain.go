@@ -153,7 +153,7 @@ func runRemoteScript(cfg config, timeout time.Duration, script string) (commandR
 		return copied, err
 	}
 
-	command := "sudo -n bash " + shellQuote(remote) + "; code=$?; rm -f " + shellQuote(remote) + "; exit $code"
+	command := "trap " + shellQuote("rm -f "+remote) + " EXIT; sudo -n bash " + shellQuote(remote)
 	executed, err := runTimeout(timeout, "gcloud", "compute", "ssh", vmName,
 		"--project="+cfg.Project, "--zone="+cfg.zone(), "--command="+command, "--quiet")
 	return mergeResult(copied, executed), err
