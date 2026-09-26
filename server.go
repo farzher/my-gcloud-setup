@@ -4,6 +4,15 @@ import "time"
 
 const systemManagedHashFile = "/var/lib/cloud-charm/system-hash"
 
+const gatewayServiceDropIn = `[Service]
+Environment="HERMES_HOME=/root/.hermes"
+Environment="PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
+CPUWeight=100
+MemoryHigh=360M
+MemoryMax=480M
+TasksMax=192
+`
+
 const systemScript = `#!/bin/bash
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -114,14 +123,7 @@ fi
 # Hermes profile. Pre-create its drop-in so setup uses that profile and the VM limits.
 mkdir -p /etc/systemd/system/hermes-gateway.service.d
 cat >/etc/systemd/system/hermes-gateway.service.d/cloud.conf <<'GATEWAY'
-[Service]
-Environment="HERMES_HOME=/root/.hermes"
-Environment="PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
-CPUWeight=100
-MemoryHigh=360M
-MemoryMax=480M
-TasksMax=192
-GATEWAY
+` + gatewayServiceDropIn + `GATEWAY
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*
