@@ -21,17 +21,16 @@ service_status nginx.service
 service_status postgresql.service
 
 printf '\n== health ==\n'
-if HEALTH="$(curl -fsS --max-time 2 "$URL/healthz" 2>/dev/null)"; then
+if HEALTH="$(curl -fsS --connect-timeout 1 --max-time 2 "$URL/healthz" 2>/dev/null)"; then
   printf 'healthz: %s\n' "$(printf '%s' "$HEALTH" | tr '\n' ' ' | cut -c1-300)"
-else
-  printf 'healthz: failed\n'
-  FAILED=1
-fi
-
-if sudo -n -u postgres psql -d web -tAc 'SELECT 1' 2>/dev/null | grep -qx 1; then
   printf 'database: ok\n'
 else
-  printf 'database: failed\n'
+  printf 'healthz: failed\n'
+  if sudo -n -u postgres psql -d web -tAc 'SELECT 1' 2>/dev/null | grep -qx 1; then
+    printf 'database: ok\n'
+  else
+    printf 'database: failed\n'
+  fi
   FAILED=1
 fi
 
