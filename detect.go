@@ -162,7 +162,7 @@ func remoteProbe(cfg config, staticIP string) string {
 echo READY_SSH
 if command -v node >/dev/null && command -v psql >/dev/null && command -v nginx >/dev/null && swapon --show=NAME --noheadings | grep -qx /swapfile; then echo READY_SYSTEM; fi
 if command -v hermes >/dev/null && [ -s /root/.hermes/SOUL.md ] && [ "$(cat ` + shellQuote(hermesManagedHashFile) + ` 2>/dev/null)" = "` + hermesHash + `" ]; then echo READY_HERMES; fi
-if command -v hermes >/dev/null && hermes auth status openai-codex 2>/dev/null | grep -Eqi "logged in|authenticated" && [ "$(hermes config get model.provider 2>/dev/null)" = "openai-codex" ] && [ "$(hermes config get model.default 2>/dev/null)" = "` + chatGPTModel + `" ] && [ "$(hermes config get agent.reasoning_effort 2>/dev/null)" = "` + chatGPTEffort + `" ]; then echo READY_CHATGPT; fi
+if python3 -c ` + shellQuote(chatGPTAuthProbePython()) + ` >/dev/null 2>&1 && [ "$(cat ` + shellQuote(chatGPTManagedHashFile) + ` 2>/dev/null)" = "` + chatGPTManagedHash() + `" ]; then echo READY_CHATGPT; fi
 `
 	if cfg.Repo != "" {
 		script += `if [ -d /website/app/.git ] && [ "$(git -C /website/app remote get-url origin 2>/dev/null)" = ` + shellQuote("git@github.com:"+cfg.Repo+".git") + ` ] && grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts 2>/dev/null; then echo READY_GITHUB; fi
