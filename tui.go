@@ -164,8 +164,8 @@ var (
 	badStyle    = lipgloss.NewStyle().Foreground(red)
 )
 
-func initialModel() model {
-	m := model{screen: screenLoading, cfg: loadConfig(), autoRoute: true}
+func initialModel(cfg config) model {
+	m := model{screen: screenLoading, cfg: cfg, autoRoute: true}
 	m.syncMenu()
 	return m
 }
