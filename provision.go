@@ -224,6 +224,12 @@ func projectEditor(ctx context.Context, project, email string) (bool, error) {
 }
 
 func ensureProjectEditor(project string) (commandResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if ok, err := projectEditor(ctx, project, adminEmail); err == nil && ok {
+		return commandResult{}, nil
+	}
+
 	var last commandResult
 	var err error
 	for i := 0; i < 6; i++ {
