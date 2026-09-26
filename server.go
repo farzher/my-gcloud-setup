@@ -101,8 +101,14 @@ done
 systemctl enable --now postgresql nginx >/dev/null
 systemctl restart postgresql
 
-su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='root'\"" | grep -q 1 || su - postgres -c "createuser root"
-su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='web'\"" | grep -q 1 || su - postgres -c "createdb -O root web"
+ROLE_EXISTS="$(su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='root'\"")"
+if [ "$ROLE_EXISTS" != 1 ]; then
+  su - postgres -c "createuser root"
+fi
+DB_EXISTS="$(su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='web'\"")"
+if [ "$DB_EXISTS" != 1 ]; then
+  su - postgres -c "createdb -O root web"
+fi
 
 # cloud runs the Hermes gateway as a system service using root's managed
 # Hermes profile. Pre-create its drop-in so setup uses that profile and the VM limits.
