@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -173,15 +174,17 @@ func runChatGPTAuth(project string) error {
 }
 
 func chatGPTAuthStatus(project, zone string) (bool, error) {
-	// Run Python directly instead of nesting it inside bash -lc. Besides being
-	// simpler, this avoids fragile multi-layer shell quoting on gcloud SSH.
 	statusScript := strings.Replace(
 		chatGPTAuthProbePython(),
 		"raise SystemExit(0 if logged_in else 1)",
 		`print("logged" if logged_in else "missing")`,
 		1,
 	)
-	remote := "sudo -n python3 -c " + shellQuote(statusScript)
+	// gcloud SSH reparses --command through a remote shell. Encode the probe so
+	// quotes/newlines in the Python source never participate in shell parsing.
+	encoded := base64.StdEncoding.EncodeToString([]byte(statusScript))
+	python := `import base64;exec(base64.b64decode("` + encoded + `"))`
+	remote := "sudo -n python3 -c " + shellQuote(python)
 	r, err := runTimeout(15*time.Second, "gcloud", "compute", "ssh", vmName,
 		"--project="+project, "--zone="+zone, "--command="+remote, "--quiet")
 	if err != nil {
