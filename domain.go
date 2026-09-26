@@ -77,7 +77,6 @@ command -v hermes >/dev/null
 python3 -c ` + shellQuote(chatGPTAuthProbePython()) + ` >/dev/null 2>&1
 [ -s /root/.hermes/SOUL.md ]
 [ "$(cat ` + shellQuote(hermesManagedHashFile) + `)" = "` + hermesHash + `" ]
-[ ! -d /website/.git ]
 [ -d /website/app/.git ]
 [ "$(git -C /website/app remote get-url origin)" = ` + shellQuote("git@github.com:"+cfg.Repo+".git") + ` ]
 grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts
