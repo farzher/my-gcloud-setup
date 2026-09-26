@@ -37,7 +37,12 @@ func main() {
 		}
 	}
 
-	next := initialModel()
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cloud:", err)
+		os.Exit(1)
+	}
+	next := initialModel(cfg)
 	for {
 		final, err := tea.NewProgram(next).Run()
 		if err != nil {
