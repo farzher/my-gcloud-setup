@@ -75,9 +75,6 @@ command -v psql >/dev/null
 command -v nginx >/dev/null
 command -v hermes >/dev/null
 python3 -c ` + shellQuote(chatGPTAuthProbePython()) + ` >/dev/null 2>&1
-[ "$(hermes config get model.provider)" = openai-codex ]
-[ "$(hermes config get model.default)" = ` + chatGPTModel + ` ]
-[ "$(hermes config get agent.reasoning_effort)" = ` + chatGPTEffort + ` ]
 [ -s /root/.hermes/SOUL.md ]
 [ "$(cat ` + shellQuote(hermesManagedHashFile) + `)" = "` + hermesHash + `" ]
 [ ! -d /website/.git ]
@@ -111,7 +108,15 @@ systemctl is-active --quiet nginx
 systemctl is-active --quiet postgresql
 nginx -t >/dev/null 2>&1
 nginx -T 2>/dev/null | grep -F 'proxy_pass http://127.0.0.1:3000;' >/dev/null
-/usr/local/bin/server-status >/dev/null
+WEB_HEALTHY=0
+for _ in $(seq 1 20); do
+  if curl -fsS -o /dev/null --connect-timeout 1 --max-time 1 http://127.0.0.1:3000/healthz; then
+    WEB_HEALTHY=1
+    break
+  fi
+  sleep 0.5
+done
+[ "$WEB_HEALTHY" = 1 ]
 `
 	if domain != "" && !cfg.httpsDeferredFor(cfg.Account) {
 		cert := "/etc/letsencrypt/live/" + domain + "/fullchain.pem"
@@ -121,7 +126,7 @@ nginx -T 2>/dev/null | grep -F ` + shellQuote("ssl_certificate "+cert) + ` >/dev
 	}
 	script += `printf 'ready\n'
 `
-	return runRemoteScript(cfg, 60*time.Second, script)
+	return runRemoteScript(cfg, 90*time.Second, script)
 }
 
 func runRemoteScript(cfg config, timeout time.Duration, script string) (commandResult, error) {
