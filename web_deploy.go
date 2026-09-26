@@ -34,9 +34,9 @@ if ! systemctl restart web; then
   exit 1
 fi
 READY=0
-for _ in $(seq 1 30); do
+for _ in $(seq 1 60); do
   if check_ready; then READY=1; break; fi
-  sleep 0.1
+  sleep 0.5
 done
 if [ "$READY" != 1 ]; then
   echo 'Web service did not become ready.' >&2
