@@ -124,6 +124,21 @@ Environment=DATABASE_URL=postgresql:///web?host=/var/run/postgresql
 Environment=NODE_ENV=production
 Environment=NODE_OPTIONS=--max-old-space-size=224
 CPUWeight=200
+MemoryHigh=288M
+MemoryMax=384M
+TasksMax=128
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/website/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
 ExecStart=/usr/bin/npm start
 Restart=on-failure
 RestartSec=1
@@ -146,6 +161,9 @@ Type=oneshot
 ExecStart=/usr/local/bin/backup-web
 TimeoutStartSec=30min
 CPUWeight=25
+MemoryHigh=256M
+MemoryMax=384M
+TasksMax=128
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
