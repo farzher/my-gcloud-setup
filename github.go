@@ -148,7 +148,18 @@ if [ ! -d /website/app/.git ]; then
     exit 1
   fi
   rm -rf /website/app
-  git clone ` + shellQuote(remoteURL) + ` /website/app
+  CLONE_DIR="/website/.app-clone.$"
+  trap 'rm -rf "$CLONE_DIR"' EXIT
+  rm -rf "$CLONE_DIR"
+  git clone ` + shellQuote(remoteURL) + ` "$CLONE_DIR"
+  mv "$CLONE_DIR" /website/app
+  trap - EXIT
+else
+  CURRENT_REMOTE="$(git -C /website/app remote get-url origin 2>/dev/null || true)"
+  if [ -n "$CURRENT_REMOTE" ] && [ "$CURRENT_REMOTE" != ` + shellQuote(remoteURL) + ` ]; then
+    echo "Existing /website/app points to a different Git repository: $CURRENT_REMOTE" >&2
+    exit 1
+  fi
 fi
 git -C /website/app remote set-url origin ` + shellQuote(remoteURL) + `
 git -C /website/app config user.name Hermes
