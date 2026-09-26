@@ -295,7 +295,7 @@ func destroyCmd(cfg config, releaseIP bool) tea.Cmd {
 		if releaseIP {
 			r, e = run(ctx, "gcloud", "compute", "addresses", "delete", addressName, "--project="+cfg.Project, "--region="+cfg.region(), "--quiet")
 			all = mergeResult(all, r)
-			if e != nil && !looksNotFound(all.Stderr) {
+			if e != nil && !looksNotFound(usefulOutput(r)) {
 				return actionDoneMsg{"Destroy", cfg, usefulOutput(all), e}
 			}
 		}
