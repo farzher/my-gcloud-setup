@@ -16,22 +16,37 @@ func ensureNetwork(cfg config) (commandResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	var all commandResult
-	if !gcloudExists(ctx, "compute", "networks", "describe", networkName, "--project="+cfg.Project) {
-		r, e := run(ctx, "gcloud", "compute", "networks", "create", networkName, "--project="+cfg.Project, "--subnet-mode=custom", "--quiet")
+	exists, r, e := gcloudResourceExists(ctx, "compute", "networks", "describe", networkName, "--project="+cfg.Project)
+	all = mergeResult(all, r)
+	if e != nil {
+		return all, e
+	}
+	if !exists {
+		r, e = run(ctx, "gcloud", "compute", "networks", "create", networkName, "--project="+cfg.Project, "--subnet-mode=custom", "--quiet")
 		all = mergeResult(all, r)
 		if e != nil {
 			return all, e
 		}
 	}
-	if !gcloudExists(ctx, "compute", "networks", "subnets", "describe", subnetName, "--project="+cfg.Project, "--region="+cfg.region()) {
-		r, e := run(ctx, "gcloud", "compute", "networks", "subnets", "create", subnetName, "--project="+cfg.Project, "--region="+cfg.region(), "--network="+networkName, "--range=10.10.0.0/24", "--quiet")
+	exists, r, e = gcloudResourceExists(ctx, "compute", "networks", "subnets", "describe", subnetName, "--project="+cfg.Project, "--region="+cfg.region())
+	all = mergeResult(all, r)
+	if e != nil {
+		return all, e
+	}
+	if !exists {
+		r, e = run(ctx, "gcloud", "compute", "networks", "subnets", "create", subnetName, "--project="+cfg.Project, "--region="+cfg.region(), "--network="+networkName, "--range=10.10.0.0/24", "--quiet")
 		all = mergeResult(all, r)
 		if e != nil {
 			return all, e
 		}
 	}
-	if !gcloudExists(ctx, "compute", "firewall-rules", "describe", firewall, "--project="+cfg.Project) {
-		r, e := run(ctx, "gcloud", "compute", "firewall-rules", "create", firewall, "--project="+cfg.Project, "--network="+networkName,
+	exists, r, e = gcloudResourceExists(ctx, "compute", "firewall-rules", "describe", firewall, "--project="+cfg.Project)
+	all = mergeResult(all, r)
+	if e != nil {
+		return all, e
+	}
+	if !exists {
+		r, e = run(ctx, "gcloud", "compute", "firewall-rules", "create", firewall, "--project="+cfg.Project, "--network="+networkName,
 			"--direction=INGRESS", "--allow=tcp:22,tcp:80,tcp:443", "--source-ranges=0.0.0.0/0", "--target-tags="+networkTag, "--quiet")
 		all = mergeResult(all, r)
 		if e != nil {
@@ -45,8 +60,13 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	var all commandResult
-	if !gcloudExists(ctx, "compute", "addresses", "describe", addressName, "--project="+cfg.Project, "--region="+cfg.region()) {
-		r, e := run(ctx, "gcloud", "compute", "addresses", "create", addressName, "--project="+cfg.Project, "--region="+cfg.region(), "--network-tier=PREMIUM", "--quiet")
+	exists, r, e := gcloudResourceExists(ctx, "compute", "addresses", "describe", addressName, "--project="+cfg.Project, "--region="+cfg.region())
+	all = mergeResult(all, r)
+	if e != nil {
+		return all, "", e
+	}
+	if !exists {
+		r, e = run(ctx, "gcloud", "compute", "addresses", "create", addressName, "--project="+cfg.Project, "--region="+cfg.region(), "--network-tier=PREMIUM", "--quiet")
 		all = mergeResult(all, r)
 		if e != nil {
 			return all, "", e
@@ -148,7 +168,11 @@ func ensureAddress(cfg config) (commandResult, string, error) {
 func ensureVM(cfg config) (commandResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
-	if gcloudExists(ctx, "compute", "instances", "describe", vmName, "--project="+cfg.Project, "--zone="+cfg.zone()) {
+	exists, r, err := gcloudResourceExists(ctx, "compute", "instances", "describe", vmName, "--project="+cfg.Project, "--zone="+cfg.zone())
+	if err != nil {
+		return r, err
+	}
+	if exists {
 		return run(ctx, "gcloud", "compute", "instances", "describe", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--format=value(status)")
 	}
 	return run(ctx, "gcloud", "compute", "instances", "create", vmName,
