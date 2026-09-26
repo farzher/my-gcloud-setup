@@ -22,6 +22,10 @@ if [ "$CURRENT_BRANCH" != main ]; then
     git checkout -b main
   fi
 fi
+if ! git diff --quiet -- .gitignore AGENTS.md ops/deploy.sh ops/ship.sh ops/status.sh ops/backup.sh ops/restore.sh; then
+  echo 'Web setup found uncommitted changes in cloud-managed files; commit or discard them before retrying.' >&2
+  exit 1
+fi
 if ! git diff --cached --quiet; then
   echo 'Web setup found staged application changes; commit or unstage them before retrying.' >&2
   exit 1
@@ -119,6 +123,7 @@ Environment=DATA_DIR=/website/data
 Environment=DATABASE_URL=postgresql:///web?host=/var/run/postgresql
 Environment=NODE_ENV=production
 Environment=NODE_OPTIONS=--max-old-space-size=224
+CPUWeight=200
 ExecStart=/usr/bin/npm start
 Restart=on-failure
 RestartSec=1
@@ -140,6 +145,7 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/usr/local/bin/backup-web
 TimeoutStartSec=30min
+CPUWeight=25
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
