@@ -38,7 +38,8 @@ func runExternalSession(action externalAction, cfg config) error {
 		args = []string{"-tt", host}
 	case externalHermes:
 		name = "Hermes"
-		remote := "sudo -n -i bash -lc " + shellQuote("cd /website/app 2>/dev/null || cd /root; exec hermes")
+		command := "cd /website/app 2>/dev/null || cd /root; exec hermes"
+		remote := "sudo -n env PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin HERMES_HOME=/root/.hermes bash -c " + shellQuote(command)
 		args = []string{"-tt", host, remote}
 	case externalGateway:
 		name = "Gateway"
