@@ -16,7 +16,7 @@ PACKAGES=(
 )
 MISSING=()
 for package in "${PACKAGES[@]}"; do
-  dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null | grep -q 'installed' || MISSING+=("$package")
+  dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null | grep -qx 'installed' || MISSING+=("$package")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
   apt-get update
