@@ -159,6 +159,7 @@ type cloudState struct {
 	HermesReady    bool
 	ChatGPTReady   bool
 	GitHubReady    bool
+	WebInstalled   bool
 	WebReady       bool
 	DNSReady       bool
 	HTTPSReady     bool
@@ -173,6 +174,7 @@ type serviceState struct {
 	HermesReady  bool
 	ChatGPTReady bool
 	GitHubReady  bool
+	WebInstalled bool
 	WebReady     bool
 	DNSReady     bool
 	HTTPSReady   bool
