@@ -29,6 +29,8 @@ trap 'rm -rf "$TMP"' EXIT
 GIT="$TMP/git"
 mkdir -p "$GIT"
 git -C "$GIT" init -q
+git -C "$GIT" config pack.threads 1
+git -C "$GIT" config pack.windowMemory 32m
 git -C "$GIT" remote add origin "$REMOTE"
 HAVE_BACKUP=0
 if git -C "$GIT" ls-remote --exit-code origin refs/heads/backup >/dev/null 2>&1; then
