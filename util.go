@@ -246,10 +246,17 @@ func configPath() string {
 	return filepath.Join(dir, "cloud-charm", "config.json")
 }
 
-func loadConfig() config {
+func loadConfig() (config, error) {
 	c := config{Projects: map[string]string{}, Names: map[string]string{}, Domains: map[string]string{}, Billing: map[string]string{}, Regions: map[string]string{}, Repos: map[string]string{}, Disabled: map[string]bool{}}
-	if data, e := os.ReadFile(configPath()); e == nil {
-		_ = json.Unmarshal(data, &c)
+	data, err := os.ReadFile(configPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c, nil
+		}
+		return c, fmt.Errorf("read config: %w", err)
+	}
+	if err = json.Unmarshal(data, &c); err != nil {
+		return config{}, fmt.Errorf("parse config %s: %w", configPath(), err)
 	}
 	if c.Projects == nil {
 		c.Projects = map[string]string{}
@@ -272,7 +279,7 @@ func loadConfig() config {
 	if c.Disabled == nil {
 		c.Disabled = map[string]bool{}
 	}
-	return c
+	return c, nil
 }
 
 func saveConfig(c config) error {
