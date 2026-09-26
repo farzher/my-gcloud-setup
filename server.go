@@ -96,6 +96,7 @@ mkdir -p /etc/systemd/system/hermes-gateway.service.d
 cat >/etc/systemd/system/hermes-gateway.service.d/cloud.conf <<'GATEWAY'
 [Service]
 Environment="HERMES_HOME=/root/.hermes"
+Environment="PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
 MemoryHigh=360M
 MemoryMax=480M
 GATEWAY
