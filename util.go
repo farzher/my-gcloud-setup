@@ -102,7 +102,7 @@ func uniqueLines(s string) []string {
 
 func looksNotFound(s string) bool {
 	x := strings.ToLower(s)
-	return strings.Contains(x, "not found") || strings.Contains(x, "was not found")
+	return strings.Contains(x, "not found") || strings.Contains(x, "was not found") || strings.Contains(x, "could not resolve to a repository")
 }
 
 func shortError(err error) string {
