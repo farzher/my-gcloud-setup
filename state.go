@@ -207,6 +207,7 @@ type fullDetectedMsg struct {
 type servicesDetectedMsg struct {
 	account string
 	state   serviceState
+	err     error
 }
 
 func detectCmd(cfg config) tea.Cmd {
@@ -225,6 +226,7 @@ func fullDetectCmd(cfg config, account string, accounts []string) tea.Cmd {
 
 func servicesDetectCmd(cfg config, base cloudState) tea.Cmd {
 	return func() tea.Msg {
-		return servicesDetectedMsg{account: base.Account, state: detectServices(cfg, base)}
+		s, err := detectServices(cfg, base)
+		return servicesDetectedMsg{account: base.Account, state: s, err: err}
 	}
 }
