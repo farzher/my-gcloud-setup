@@ -100,10 +100,10 @@ func detectCloud(cfg config, account string, accounts []string) (cloudState, err
 	return s, nil
 }
 
-func detectServices(cfg config, base cloudState) serviceState {
+func detectServices(cfg config, base cloudState) (serviceState, error) {
 	var s serviceState
 	if !base.VMExists {
-		return s
+		return s, nil
 	}
 	cfg.Account = base.Account
 	cfg.Project = cfg.projectFor(base.Account)
@@ -116,7 +116,15 @@ func detectServices(cfg config, base cloudState) serviceState {
 	go func() { auditCh <- auditFreeTier(ctx, cfg, base.Instance, base.StaticIP) }()
 
 	if strings.EqualFold(base.Instance.Status, "RUNNING") {
-		probe, _ := runRemoteScript(cfg, 35*time.Second, remoteProbe(cfg, base.StaticIP))
+		probe, err := runRemoteScript(cfg, 35*time.Second, remoteProbe(cfg, base.StaticIP))
+		if err != nil {
+			s.CostWarnings = <-auditCh
+			detail := strings.TrimSpace(usefulOutput(probe))
+			if detail != "" {
+				return s, fmt.Errorf("check server services: %w\n%s", err, detail)
+			}
+			return s, fmt.Errorf("check server services: %w", err)
+		}
 		for _, line := range nonEmptyLines(probe.Stdout) {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "BACKUP_TIME ") {
@@ -148,7 +156,7 @@ func detectServices(cfg config, base cloudState) serviceState {
 		s.VerifyReady = s.SSHReady && s.SystemReady && s.HermesReady && s.ChatGPTReady && s.GitHubReady && s.WebReady && domainOK
 	}
 	s.CostWarnings = <-auditCh
-	return s
+	return s, nil
 }
 
 func remoteProbe(cfg config, staticIP string) string {
@@ -176,14 +184,8 @@ if [ ! -d /website/.git ] && [ -d /website/data ] && [ -x /website/app/ops/deplo
   WEB_INSTALLED=1
   echo READY_WEB_CONFIG
 fi
-if [ "$WEB_INSTALLED" = 1 ] && systemctl is-active --quiet web.service && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql; then
-  for _ in $(seq 1 20); do
-    if curl -fsS -o /dev/null --connect-timeout 1 --max-time 1 http://127.0.0.1:3000/healthz; then
-      echo READY_WEB
-      break
-    fi
-    sleep 0.5
-  done
+if [ "$WEB_INSTALLED" = 1 ] && systemctl is-active --quiet web.service && systemctl is-active --quiet nginx && systemctl is-active --quiet postgresql && curl -fsS -o /dev/null --connect-timeout 1 --max-time 2 http://127.0.0.1:3000/healthz; then
+  echo READY_WEB
 fi
 if [ -s /var/lib/website/last-backup-success ]; then printf 'BACKUP_TIME %s\n' "$(cat /var/lib/website/last-backup-success)"; fi
 `
