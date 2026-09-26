@@ -137,7 +137,6 @@ export CMAKE_BUILD_PARALLEL_LEVEL=1
 export CARGO_BUILD_JOBS=1
 
 mkdir -p /root/.hermes
-touch /root/.hermes/.no-bundled-skills
 if [ ! -s /root/.hermes/SOUL.md ]; then
 cat >/root/.hermes/SOUL.md <<'SOUL'
 ` + hermesSoul + `SOUL
