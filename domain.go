@@ -64,15 +64,17 @@ func verifyServer(cfg config) (commandResult, error) {
 	restoreHash := contentHash(buildRestoreScript())
 	contextHash := contentHash(buildHermesProjectContext(cfg, domain))
 	script := `set -Eeuo pipefail
+export PATH="/root/.local/bin:/usr/local/bin:$PATH"
+trap 'echo "verify failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 . /etc/os-release
 [ "$ID" = debian ] && [ "${VERSION_ID%%.*}" = 13 ]
-swapon --show=NAME --noheadings | grep -qx /swapfile
+swapon --show=NAME --noheadings | grep -x /swapfile >/dev/null
 [ "$(stat -c %s /swapfile)" = 1073741824 ]
 command -v node >/dev/null
 command -v psql >/dev/null
 command -v nginx >/dev/null
 command -v hermes >/dev/null
-hermes auth status openai-codex | grep -Eqi 'logged in|authenticated'
+python3 -c ` + shellQuote(chatGPTAuthProbePython()) + ` >/dev/null 2>&1
 [ "$(hermes config get model.provider)" = openai-codex ]
 [ "$(hermes config get model.default)" = ` + chatGPTModel + ` ]
 [ "$(hermes config get agent.reasoning_effort)" = ` + chatGPTEffort + ` ]
@@ -108,13 +110,13 @@ systemctl is-active --quiet web-backup.timer
 systemctl is-active --quiet nginx
 systemctl is-active --quiet postgresql
 nginx -t >/dev/null 2>&1
-nginx -T 2>/dev/null | grep -Fq 'proxy_pass http://127.0.0.1:3000;'
+nginx -T 2>/dev/null | grep -F 'proxy_pass http://127.0.0.1:3000;' >/dev/null
 /usr/local/bin/server-status >/dev/null
 `
 	if domain != "" && !cfg.httpsDeferredFor(cfg.Account) {
 		cert := "/etc/letsencrypt/live/" + domain + "/fullchain.pem"
 		script += `[ -s ` + shellQuote(cert) + ` ]
-nginx -T 2>/dev/null | grep -Fq ` + shellQuote("ssl_certificate "+cert) + `
+nginx -T 2>/dev/null | grep -F ` + shellQuote("ssl_certificate "+cert) + ` >/dev/null
 `
 	}
 	script += `printf 'ready\n'
