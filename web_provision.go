@@ -2,6 +2,7 @@ package main
 
 func buildWebProvisionScript(cfg config, serverName, hermesContext string) string {
 	return `set -Eeuo pipefail
+export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 APP=/website/app
 DATA=/website/data
 STATE=/var/lib/website
@@ -180,7 +181,6 @@ brotli_static on;
 brotli_types
     text/plain
     text/css
-    text/html
     application/json
     application/javascript
     application/manifest+json
