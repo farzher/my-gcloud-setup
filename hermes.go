@@ -1,9 +1,6 @@
 package main
 
-import (
-	"strings"
-	"time"
-)
+import "time"
 
 // This file defines managed Hermes defaults and generated project rules.
 // SOUL.md is a bootstrap default; evolved SOUL, memory, and skills are preserved by backups.
@@ -92,6 +89,7 @@ settings = {
     "sessions.min_vacuum_interval_days": 30,
     "sessions.min_interval_hours": 24,
     "gateway.write_sessions_json": False,
+    "terminal.cwd": "/website/app",
 }
 for path, value in settings.items():
     set_value(path, value)
@@ -222,11 +220,4 @@ func ensureChatGPT(cfg config) (commandResult, error) {
 		return commandResult{}, errChatGPTAuthRequired
 	}
 	return commandResult{}, nil
-}
-func chatGPTLoggedIn(output string) bool {
-	x := strings.ToLower(output)
-	if strings.Contains(x, "not logged") || strings.Contains(x, "not authenticated") || strings.Contains(x, "missing") {
-		return false
-	}
-	return strings.Contains(x, "logged in") || strings.Contains(x, "authenticated")
 }
