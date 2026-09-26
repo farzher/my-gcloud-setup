@@ -173,12 +173,23 @@ func runChatGPTAuth(project string) error {
 }
 
 func chatGPTAuthStatus(project, zone string) (bool, error) {
-	probe := "python3 -c " + shellQuote(chatGPTAuthProbePython()) + " >/dev/null 2>&1"
-	remote := "sudo -n bash -lc " + shellQuote("if "+probe+"; then echo logged; else echo missing; fi")
+	// Run Python directly instead of nesting it inside bash -lc. Besides being
+	// simpler, this avoids fragile multi-layer shell quoting on gcloud SSH.
+	statusScript := strings.Replace(
+		chatGPTAuthProbePython(),
+		"raise SystemExit(0 if logged_in else 1)",
+		`print("logged" if logged_in else "missing")`,
+		1,
+	)
+	remote := "sudo -n python3 -c " + shellQuote(statusScript)
 	r, err := runTimeout(15*time.Second, "gcloud", "compute", "ssh", vmName,
 		"--project="+project, "--zone="+zone, "--command="+remote, "--quiet")
 	if err != nil {
-		return false, err
+		detail := strings.TrimSpace(usefulOutput(r))
+		if detail != "" {
+			return false, fmt.Errorf("ChatGPT auth probe: %w\n%s\ncommand: %s", err, detail, r.Command)
+		}
+		return false, fmt.Errorf("ChatGPT auth probe: %w\ncommand: %s", err, r.Command)
 	}
 	return strings.Contains(strings.ToLower(r.Stdout), "logged"), nil
 }
