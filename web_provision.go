@@ -242,8 +242,8 @@ git add -- .gitignore AGENTS.md ops/deploy.sh ops/ship.sh ops/status.sh ops/back
 [ "$CREATED_NGINX" -eq 0 ] || git add -- ops/nginx.conf
 if ! git diff --cached --quiet; then
   git commit -m 'Configure web server' >/dev/null
-  git push -u origin HEAD:main
 fi
+git push -u origin HEAD:main
 
 # A fresh VM restores remote state before the first deployment or backup.
 if [ ! -f "$STATE/initialized" ]; then
