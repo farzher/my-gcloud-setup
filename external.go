@@ -42,7 +42,8 @@ func runExternalSession(action externalAction, cfg config) error {
 		args = []string{"-tt", host, remote}
 	case externalGateway:
 		name = "Gateway"
-		args = []string{"-tt", host, "sudo -n -i hermes gateway setup"}
+		remote := "sudo -n -i bash -lc " + shellQuote(`export PATH="/root/.local/bin:/usr/local/bin:$PATH"; export HERMES_HOME=/root/.hermes; exec hermes gateway setup`)
+		args = []string{"-tt", host, remote}
 	default:
 		return nil
 	}
@@ -66,14 +67,15 @@ func runExternalSession(action externalAction, cfg config) error {
 
 	if action == externalGateway && err == nil {
 		fmt.Println("\nStarting gateway service…")
-		serviceScript := "set -e; " +
-			"export HERMES_HOME=/root/.hermes; " +
+		serviceScript := "set -Eeuo pipefail; " +
+			"export PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin HERMES_HOME=/root/.hermes; " +
+			"hermes gateway uninstall >/dev/null 2>&1 || true; " +
 			"hermes gateway install --system --run-as-user root --force --start-now --start-on-login; " +
 			"install -d /etc/systemd/system/hermes-gateway.service.d; " +
-			"printf '[Service]\\nEnvironment=\"HERMES_HOME=/root/.hermes\"\\nMemoryHigh=360M\\nMemoryMax=480M\\n' >/etc/systemd/system/hermes-gateway.service.d/cloud.conf; " +
+			"printf '[Service]\\nEnvironment=\"HERMES_HOME=/root/.hermes\"\\nEnvironment=\"PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin\"\\nMemoryHigh=360M\\nMemoryMax=480M\\n' >/etc/systemd/system/hermes-gateway.service.d/cloud.conf; " +
 			"systemctl daemon-reload; " +
 			"hermes gateway restart --system; " +
-			"hermes gateway status --system --full"
+			"hermes gateway status --system"
 		serviceRemote := "sudo -n -i bash -lc " + shellQuote(serviceScript)
 		service := exec.Command(ssh, host, serviceRemote)
 		service.Stdin, service.Stdout, service.Stderr = os.Stdin, os.Stdout, os.Stderr
