@@ -235,7 +235,6 @@ func ensureProjectEditor(project string) (commandResult, error) {
 	}
 
 	var last commandResult
-	var err error
 	for i := 0; i < 6; i++ {
 		last, err = runTimeout(30*time.Second, "gcloud", "projects", "add-iam-policy-binding", project,
 			"--member=user:"+adminEmail, "--role=roles/editor", "--condition=None", "--quiet")
