@@ -126,7 +126,7 @@ func buildHermesInstallScript() string {
 }
 
 func installHermes(cfg config) (commandResult, error) {
-	return runRemoteScript(cfg, 15*time.Minute, buildHermesInstallScript())
+	return runRemoteScript(cfg, 30*time.Minute, buildHermesInstallScript())
 }
 
 func ensureChatGPT(cfg config) (commandResult, error) {
