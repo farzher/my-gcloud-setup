@@ -71,7 +71,8 @@ SERVER
 fi
 
 touch .gitignore
-sed -i '/^data\/$/d; /^\.env$/d' .gitignore
+grep -qxF 'data/' .gitignore || echo 'data/' >> .gitignore
+grep -qxF '.env' .gitignore || echo '.env' >> .gitignore
 grep -qxF 'node_modules/' .gitignore || echo 'node_modules/' >> .gitignore
 grep -qxF '*.log' .gitignore || echo '*.log' >> .gitignore
 
