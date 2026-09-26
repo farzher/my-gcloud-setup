@@ -103,6 +103,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state.HermesReady = old.HermesReady
 			m.state.ChatGPTReady = old.ChatGPTReady
 			m.state.GitHubReady = old.GitHubReady
+			m.state.WebInstalled = old.WebInstalled
 			m.state.WebReady = old.WebReady
 			m.state.DNSReady = old.DNSReady
 			m.state.HTTPSReady = old.HTTPSReady
@@ -173,6 +174,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state.HermesReady = msg.state.HermesReady
 		m.state.ChatGPTReady = msg.state.ChatGPTReady
 		m.state.GitHubReady = msg.state.GitHubReady
+		m.state.WebInstalled = msg.state.WebInstalled
 		m.state.WebReady = msg.state.WebReady
 		m.state.DNSReady = msg.state.DNSReady
 		m.state.HTTPSReady = msg.state.HTTPSReady
