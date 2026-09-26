@@ -108,9 +108,6 @@ func runChatGPTAuth(project string) error {
 	// The persisted auth store is cheap to inspect and avoids a full Hermes
 	// startup just to learn that the user is already logged in.
 	if loggedIn, _ := chatGPTAuthStatus(project, zone); loggedIn {
-		if _, err := configureChatGPT(project, zone); err != nil {
-			return err
-		}
 		fmt.Fprintln(os.Stdout, "ChatGPT already logged in.")
 		return nil
 	}
@@ -141,9 +138,6 @@ func runChatGPTAuth(project string) error {
 	defer deadline.Stop()
 
 	finish := func() error {
-		if _, err := configureChatGPT(project, zone); err != nil {
-			return err
-		}
 		fmt.Fprintln(os.Stdout, "ChatGPT login confirmed.")
 		return nil
 	}
