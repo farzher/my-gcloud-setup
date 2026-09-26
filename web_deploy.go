@@ -10,6 +10,8 @@ flock -n 9 || { echo 'Another deploy, backup, or restore is already running.' >&
 install -d -m 0755 "$STATE"
 cd "$APP"
 export npm_config_audit=false npm_config_fund=false npm_config_jobs=1
+export NODE_OPTIONS=--max-old-space-size=256
+export MAKEFLAGS=-j1 CMAKE_BUILD_PARALLEL_LEVEL=1 CARGO_BUILD_JOBS=1
 pkg_hash() { { cat package.json; [ ! -f package-lock.json ] || cat package-lock.json; } | sha256sum | awk '{print $1}'; }
 HASH="$(pkg_hash)"
 if [ ! -d node_modules ] || [ "$(cat "$STATE/deps-hash" 2>/dev/null || true)" != "$HASH" ]; then
