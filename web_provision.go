@@ -141,6 +141,10 @@ systemctl disable --now web-backup.timer >/dev/null 2>&1 || true
 
 # Keep universal transport/compression behavior in the managed system config.
 # Site-specific cache/static-delivery policy belongs in tracked ops/nginx.conf.
+# Ubuntu's stock nginx.conf may already enable these HTTP-level directives.
+# Remove the stock copies before defining our managed values so nginx -t stays
+# valid across package versions and repeated provisioning runs.
+sed -i -E '/^[[:space:]]*server_tokens[[:space:]]+(on|off)[[:space:]]*;/d; /^[[:space:]]*gzip[[:space:]]+(on|off)[[:space:]]*;/d' /etc/nginx/nginx.conf
 if ! dpkg-query -W libnginx-mod-http-brotli-filter libnginx-mod-http-brotli-static >/dev/null 2>&1; then
   apt-get update
   apt-get install -y --no-install-recommends libnginx-mod-http-brotli-filter libnginx-mod-http-brotli-static
