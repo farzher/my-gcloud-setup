@@ -149,21 +149,28 @@ trap 'rm -f "$MANAGED_SCRIPT"; if [ -n "${INSTALLER:-}" ]; then rm -f "$INSTALLE
 # Reuse a healthy install. Fresh or broken installs go through Hermes's
 # supported noninteractive installer interface instead of private stage functions.
 HERMES="$(command -v hermes || true)"
-if [ -z "$HERMES" ] || [ ! -d /root/.hermes/hermes-agent/.git ] || ! "$HERMES" --version >/dev/null 2>&1; then
+if [ -z "$HERMES" ] || [ ! -d /root/.hermes/hermes-agent/.git ] || ! timeout 30s "$HERMES" --version >/dev/null 2>&1; then
   INSTALLER="$(mktemp)"
   curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "$INSTALLER"
-  bash "$INSTALLER"     --dir /root/.hermes/hermes-agent     --hermes-home /root/.hermes     --skip-setup     --skip-browser     --skip-computer-use     --no-skills     --non-interactive
+  bash "$INSTALLER" \
+    --dir /root/.hermes/hermes-agent \
+    --hermes-home /root/.hermes \
+    --skip-setup \
+    --skip-browser \
+    --skip-computer-use \
+    --no-skills \
+    --non-interactive
   HERMES="$(command -v hermes || true)"
 fi
 [ -n "$HERMES" ]
-"$HERMES" --version >/dev/null
+timeout 30s "$HERMES" --version >/dev/null
 
 # Run all managed configuration in one Hermes runtime startup. The temporary
 # script stays outside the Hermes git checkout so startup/update checks never
 # see our provisioning helper as an untracked working-tree change.
 cat >"$MANAGED_SCRIPT" <<'PY'
 ` + buildHermesManagedConfigModule() + `PY
-python3 - "$MANAGED_SCRIPT" <<'PY'
+timeout 5m python3 - "$MANAGED_SCRIPT" <<'PY'
 import os
 import sys
 from pathlib import Path
