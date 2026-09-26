@@ -59,8 +59,8 @@ func buildHermesInstallScriptBody() string {
 set -Eeuo pipefail
 export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 
-# Keep native Python builds conservative on the 1 GB VM. Hermes' Node/browser
-# workspace is intentionally not installed on this headless server.
+# Keep native Python builds conservative on the 1 GB VM. Browser tooling is
+# intentionally omitted on this headless server.
 export UV_CONCURRENT_BUILDS=1
 export UV_CONCURRENT_INSTALLS=1
 export MAKEFLAGS="-j1"
@@ -71,18 +71,13 @@ INSTALLER="$(mktemp)"
 trap 'rm -f "$INSTALLER"' EXIT
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "$INSTALLER"
 
-for stage in repository venv python-deps path; do
-  bash "$INSTALLER" --stage "$stage" --skip-browser --skip-computer-use --no-skills
-done
-
 mkdir -p /root/.hermes
 if [ ! -s /root/.hermes/SOUL.md ]; then
 cat >/root/.hermes/SOUL.md <<'SOUL'
 ` + hermesSoul + `SOUL
 fi
 
-bash "$INSTALLER" --stage config --skip-browser --skip-computer-use --no-skills
-bash "$INSTALLER" --stage complete --skip-browser --skip-computer-use --no-skills
+bash "$INSTALLER" --non-interactive --skip-browser
 
 HERMES="$(command -v hermes)"
 [ -n "$HERMES" ]
