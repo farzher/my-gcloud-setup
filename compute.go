@@ -289,7 +289,7 @@ func destroyCmd(cfg config, releaseIP bool) tea.Cmd {
 		var all commandResult
 		r, e := run(ctx, "gcloud", "compute", "instances", "delete", vmName, "--project="+cfg.Project, "--zone="+cfg.zone(), "--delete-disks=all", "--quiet")
 		all = mergeResult(all, r)
-		if e != nil && !looksNotFound(all.Stderr) {
+		if e != nil && !looksNotFound(usefulOutput(r)) {
 			return actionDoneMsg{"Destroy", cfg, usefulOutput(all), e}
 		}
 		if releaseIP {
