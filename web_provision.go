@@ -122,6 +122,7 @@ Environment=PORT=3000
 Environment=DATA_DIR=/website/data
 Environment=DATABASE_URL=postgresql:///web?host=/var/run/postgresql
 Environment=NODE_ENV=production
+Environment=HOME=/tmp
 Environment=NODE_OPTIONS=--max-old-space-size=224
 CPUWeight=200
 MemoryHigh=288M
@@ -182,7 +183,7 @@ WantedBy=timers.target
 TIMER
 systemctl daemon-reload
 systemctl enable web.service >/dev/null
-systemctl disable --now web-backup.timer >/dev/null 2>&1 || true
+systemctl disable --now web-backup.timer >/dev/null
 
 # Keep universal transport/compression behavior in the managed system config.
 # Site-specific cache/static-delivery policy belongs in tracked ops/nginx.conf.
@@ -204,7 +205,7 @@ etag on;
 gzip on;
 gzip_vary on;
 gzip_proxied any;
-gzip_comp_level 5;
+gzip_comp_level 4;
 gzip_min_length 1024;
 gzip_static on;
 gzip_types
@@ -219,7 +220,7 @@ gzip_types
     image/svg+xml;
 
 brotli on;
-brotli_comp_level 5;
+brotli_comp_level 4;
 brotli_min_length 1024;
 brotli_static on;
 brotli_types
