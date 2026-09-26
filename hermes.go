@@ -54,7 +54,6 @@ func buildHermesProjectContext(cfg config, domain string) string {
 
 func buildHermesManagedConfigModule() string {
 	return `from hermes_cli.config import read_raw_config, save_config
-from tools.skills_sync_bundled_ops import remove_pristine_bundled_skills
 
 cfg = read_raw_config()
 
@@ -102,7 +101,6 @@ if isinstance(model, dict):
     model.pop("base_url", None)
 
 save_config(cfg, merge_existing=False)
-remove_pristine_bundled_skills(dry_run=False)
 `
 }
 
@@ -149,28 +147,17 @@ INSTALLER=""
 MANAGED_SCRIPT="$(mktemp)"
 trap 'rm -f "$MANAGED_SCRIPT"; if [ -n "${INSTALLER:-}" ]; then rm -f "$INSTALLER"; fi' EXIT
 
-# A managed-config hash change means our settings changed, not Hermes itself.
-# Reuse an existing source install and only run the low-memory installer when
-# its published command is absent.
+# Reuse a healthy install. Fresh or broken installs go through Hermes's
+# supported noninteractive installer interface instead of private stage functions.
 HERMES="$(command -v hermes || true)"
-if [ -z "$HERMES" ] || [ ! -d /root/.hermes/hermes-agent/.git ] || [ ! -x /root/.hermes/hermes-agent/.hermes/bin/hermes ]; then
+if [ -z "$HERMES" ] || [ ! -d /root/.hermes/hermes-agent/.git ] || ! "$HERMES" --version >/dev/null 2>&1; then
   INSTALLER="$(mktemp)"
   curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "$INSTALLER"
-
-  # Source the installer once instead of starting it separately for every
-  # stage. The heavy products stage is intentionally omitted on this server.
-  source "$INSTALLER"
-  SKIP_BROWSER=true
-  check_platform
-  for stage in prerequisites repository python-deps config; do
-    run_stage "$stage"
-  done
-
-  python3 /root/.hermes/hermes-agent/hermes_cli/_launchers.py /root/.local/bin
-  run_stage complete
-  HERMES="$(command -v hermes)"
+  bash "$INSTALLER"     --dir /root/.hermes/hermes-agent     --hermes-home /root/.hermes     --skip-setup     --skip-browser     --skip-computer-use     --no-skills     --non-interactive
+  HERMES="$(command -v hermes || true)"
 fi
 [ -n "$HERMES" ]
+"$HERMES" --version >/dev/null
 
 # Run all managed configuration in one Hermes runtime startup. The temporary
 # script stays outside the Hermes git checkout so startup/update checks never
