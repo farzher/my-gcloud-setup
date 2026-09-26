@@ -231,7 +231,9 @@ func (m model) updateServer(k string) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.cfg.setDisabled(m.state.Account, false)
-			_ = saveConfig(m.cfg)
+			if err := saveConfig(m.cfg); err != nil {
+				return m.showError(screenServer, err, err.Error())
+			}
 			m.startProvisionAt(0)
 			return m, runStepCmd(0, m.cfg, m.billingID)
 		case "q":
@@ -344,7 +346,11 @@ func (m *model) route() tea.Cmd {
 		m.billingID = m.state.Billing[0].id()
 		if m.cfg.billingFor(m.state.Account) != m.billingID {
 			m.cfg.setBilling(m.state.Account, m.billingID)
-			_ = saveConfig(m.cfg)
+			if err := saveConfig(m.cfg); err != nil {
+				m.lastErr, m.lastOutput, m.returnScreen = err, err.Error(), screenServer
+				m.screen = screenDetails
+				return nil
+			}
 		}
 	} else if m.billingID == "" {
 		m.screen = screenBillingPick
