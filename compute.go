@@ -204,7 +204,11 @@ func renameSiteCmd(cfg config, name, domain string) tea.Cmd {
 	return func() tea.Msg {
 		r, err := runTimeout(60*time.Second, "gcloud", "projects", "update", cfg.Project, "--name="+name, "--quiet")
 		if err == nil {
+			oldDomain := cfg.domainFor(cfg.Account)
 			cfg.setSite(cfg.Account, name, domain)
+			if domain != oldDomain {
+				cfg.setHTTPSDeferred(cfg.Account, false)
+			}
 			err = saveConfig(cfg)
 			if err == nil {
 				web, webErr := setupWeb(cfg)
