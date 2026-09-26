@@ -161,6 +161,7 @@ func detectServices(cfg config, base cloudState) (serviceState, error) {
 
 func remoteProbe(cfg config, staticIP string) string {
 	domain := cfg.domainFor(cfg.Account)
+	systemHash := systemManagedHash()
 	hermesHash := hermesManagedHash()
 	deployHash := contentHash(buildDeployScript())
 	shipHash := contentHash(buildShipScript())
@@ -172,7 +173,7 @@ func remoteProbe(cfg config, staticIP string) string {
 	script := `
 export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 echo READY_SSH
-if command -v node >/dev/null && command -v psql >/dev/null && command -v nginx >/dev/null && swapon --show=NAME --noheadings | grep -qx /swapfile; then echo READY_SYSTEM; fi
+if command -v node >/dev/null && command -v psql >/dev/null && command -v nginx >/dev/null && swapon --show=NAME --noheadings | grep -qx /swapfile && [ "$(cat ` + shellQuote(systemManagedHashFile) + ` 2>/dev/null)" = "` + systemHash + `" ]; then echo READY_SYSTEM; fi
 if command -v hermes >/dev/null && [ -s /root/.hermes/SOUL.md ] && [ "$(cat ` + shellQuote(hermesManagedHashFile) + ` 2>/dev/null)" = "` + hermesHash + `" ]; then echo READY_HERMES; fi
 if python3 -c ` + shellQuote(chatGPTAuthProbePython()) + ` >/dev/null 2>&1 && [ "$(cat ` + shellQuote(chatGPTManagedHashFile) + ` 2>/dev/null)" = "` + chatGPTManagedHash() + `" ]; then echo READY_CHATGPT; fi
 `
