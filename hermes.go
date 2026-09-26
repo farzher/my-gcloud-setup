@@ -164,7 +164,7 @@ if [ -z "$HERMES" ] || [ ! -d /root/.hermes/hermes-agent/.git ] || [ ! -x /root/
   source "$INSTALLER"
   SKIP_BROWSER=true
   check_platform
-  for stage in prerequisites repository venv python-deps config; do
+  for stage in prerequisites repository python-deps config; do
     run_stage "$stage"
   done
 
