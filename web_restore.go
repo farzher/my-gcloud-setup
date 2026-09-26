@@ -215,9 +215,9 @@ fi
 if [ "$RESTART" -eq 1 ]; then
   if ! systemctl restart web; then rollback_state; echo 'Restore rolled back because the web service would not restart.' >&2; exit 1; fi
   READY=0
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 60); do
     if check_ready; then READY=1; break; fi
-    sleep 0.1
+    sleep 0.5
   done
   if [ "$READY" != 1 ]; then
     /usr/local/bin/server-status --logs >&2 || true
