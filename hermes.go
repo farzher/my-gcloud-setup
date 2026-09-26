@@ -180,7 +180,7 @@ trap 'rm -f "$MANAGED_MODULE"; if [ -n "${INSTALLER:-}" ]; then rm -f "$INSTALLE
 # A managed-config hash change means our settings changed, not Hermes itself.
 # Reuse any published Hermes command and install only when it is absent.
 HERMES="$(command -v hermes || true)"
-if [ -z "$HERMES" ]; then
+if [ -z "$HERMES" ] || [ ! -d /root/.hermes/hermes-agent/.git ] || [ ! -x /root/.hermes/hermes-agent/.hermes/bin/hermes ]; then
   INSTALLER="$(mktemp)"
   curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "$INSTALLER"
 
