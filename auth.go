@@ -123,7 +123,7 @@ func runChatGPTAuth(project string) error {
 
 	cmd := exec.Command("gcloud", "compute", "ssh", vmName,
 		"--project="+project, "--zone="+zone,
-		"--command=exec sudo -n -i hermes auth add openai-codex", "--", "-t")
+		"--command=exec sudo -n -i hermes auth add openai-codex --type oauth", "--", "-t")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
 		return err
