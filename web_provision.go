@@ -6,13 +6,30 @@ export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 APP=/website/app
 DATA=/website/data
 STATE=/var/lib/website
+CREATED_PACKAGE=0
+CREATED_SERVER=0
+CREATED_NGINX=0
 install -d -m 0755 /website "$STATE"
 install -d -m 0750 "$DATA"
 mkdir -p "$APP/ops"
 
 cd "$APP"
-git checkout -B main >/dev/null 2>&1 || true
+CURRENT_BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+if [ "$CURRENT_BRANCH" != main ]; then
+  if git show-ref --verify --quiet refs/heads/main; then
+    git checkout main
+  else
+    git checkout -b main
+  fi
+fi
+if ! git diff --cached --quiet; then
+  echo 'Web setup found staged application changes; commit or unstage them before retrying.' >&2
+  exit 1
+fi
+git config pack.threads 1
+git config pack.windowMemory 32m
 if [ ! -f package.json ]; then
+  CREATED_PACKAGE=1
 cat >package.json <<'PACKAGE'
 {
   "name": "web-server",
@@ -22,6 +39,7 @@ cat >package.json <<'PACKAGE'
 PACKAGE
 fi
 if [ ! -f server.js ]; then
+  CREATED_SERVER=1
 cat >server.js <<'SERVER'
 const http = require('node:http');
 const { execFile } = require('node:child_process');
@@ -66,6 +84,7 @@ cat >ops/backup.sh <<'BACKUP'
 cat >ops/restore.sh <<'RESTORE'
 ` + buildRestoreScript() + `RESTORE
 if [ ! -f ops/nginx.conf ]; then
+  CREATED_NGINX=1
 cat >ops/nginx.conf <<'NGINX_APP'
 # Site-specific Nginx rules. This file is tracked with the app and is included
 # inside the managed server block. Hermes may adapt it to the site's needs.
@@ -120,6 +139,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/backup-web
+TimeoutStartSec=30min
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
@@ -210,12 +230,14 @@ systemctl reload nginx
 
 git config user.name Hermes
 git config user.email ` + shellQuote(adminEmail) + `
-git add -A
+git add -- .gitignore AGENTS.md ops/deploy.sh ops/ship.sh ops/status.sh ops/backup.sh ops/restore.sh
+[ "$CREATED_PACKAGE" -eq 0 ] || git add -- package.json
+[ "$CREATED_SERVER" -eq 0 ] || git add -- server.js
+[ "$CREATED_NGINX" -eq 0 ] || git add -- ops/nginx.conf
 if ! git diff --cached --quiet; then
   git commit -m 'Configure web server' >/dev/null
   git push -u origin HEAD:main
 fi
-hermes config set terminal.cwd "$APP" >/dev/null
 
 # A fresh VM restores remote state before the first deployment or backup.
 if [ ! -f "$STATE/initialized" ]; then
@@ -223,7 +245,9 @@ if [ ! -f "$STATE/initialized" ]; then
   touch "$STATE/initialized"
 fi
 /usr/local/bin/deploy-web
-/usr/local/bin/backup-web
+if [ ! -s "$STATE/last-backup-success" ]; then
+  /usr/local/bin/backup-web
+fi
 systemctl enable --now web-backup.timer >/dev/null
 `
 }
