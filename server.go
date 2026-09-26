@@ -10,7 +10,7 @@ export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 
 PACKAGES=(
-  ca-certificates curl git openssh-client xz-utils logrotate
+  ca-certificates curl git openssh-client xz-utils logrotate util-linux procps
   build-essential python3-dev libffi-dev
   nodejs npm postgresql nginx certbot python3-certbot-nginx
 )
@@ -117,8 +117,10 @@ cat >/etc/systemd/system/hermes-gateway.service.d/cloud.conf <<'GATEWAY'
 [Service]
 Environment="HERMES_HOME=/root/.hermes"
 Environment="PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
+CPUWeight=100
 MemoryHigh=360M
 MemoryMax=480M
+TasksMax=192
 GATEWAY
 
 apt-get clean
