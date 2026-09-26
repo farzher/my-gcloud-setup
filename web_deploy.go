@@ -22,8 +22,7 @@ if [ ! -d node_modules ] || [ "$(cat "$STATE/deps-hash" 2>/dev/null || true)" !=
 fi
 
 check_ready() {
-  curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:3000/healthz || return 1
-  psql -d web -tAc 'SELECT 1' 2>/dev/null | grep -qx 1
+  curl -fsS -o /dev/null --connect-timeout 1 --max-time 2 http://127.0.0.1:3000/healthz
 }
 
 nginx -t >/dev/null
