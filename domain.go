@@ -63,6 +63,7 @@ func verifyServer(cfg config) (commandResult, error) {
 	backupHash := contentHash(buildBackupScript())
 	restoreHash := contentHash(buildRestoreScript())
 	contextHash := contentHash(buildHermesProjectContext(cfg, domain))
+	webHash := webManagedHash(cfg)
 	script := `set -Eeuo pipefail
 export PATH="/root/.local/bin:/usr/local/bin:$PATH"
 trap 'echo "verify failed at line $LINENO: $BASH_COMMAND" >&2' ERR
@@ -79,6 +80,7 @@ python3 -c ` + shellQuote(chatGPTAuthProbePython()) + ` >/dev/null 2>&1
 [ "$(cat ` + shellQuote(hermesManagedHashFile) + `)" = "` + hermesHash + `" ]
 [ "$(cat ` + shellQuote(chatGPTManagedHashFile) + `)" = "` + chatGPTManagedHash() + `" ]
 [ -d /website/app/.git ]
+[ "$(cat ` + shellQuote(webManagedHashFile) + `)" = "` + webHash + `" ]
 [ "$(git -C /website/app remote get-url origin)" = ` + shellQuote("git@github.com:"+cfg.Repo+".git") + ` ]
 grep -qxF ` + shellQuote(githubKnownHost) + ` /root/.ssh/known_hosts
 [ -d /website/data ]
