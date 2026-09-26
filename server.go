@@ -2,16 +2,26 @@ package main
 
 import "time"
 
+const systemManagedHashFile = "/var/lib/cloud-charm/system-hash"
+
 const systemScript = `#!/bin/bash
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 
-apt-get update
-apt-get install -y --no-install-recommends \
-  ca-certificates curl git openssh-client xz-utils logrotate \
-  build-essential python3-dev libffi-dev \
+PACKAGES=(
+  ca-certificates curl git openssh-client xz-utils logrotate
+  build-essential python3-dev libffi-dev
   nodejs npm postgresql nginx certbot python3-certbot-nginx
+)
+MISSING=()
+for package in "${PACKAGES[@]}"; do
+  dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null | grep -q 'installed' || MISSING+=("$package")
+done
+if [ "${#MISSING[@]}" -gt 0 ]; then
+  apt-get update
+  apt-get install -y --no-install-recommends "${MISSING[@]}"
+fi
 
 SWAP_BYTES=1073741824
 if [ -f /swapfile ] && [ "$(stat -c %s /swapfile 2>/dev/null || echo 0)" != "$SWAP_BYTES" ]; then
@@ -105,6 +115,13 @@ apt-get clean
 rm -rf /var/lib/apt/lists/*
 `
 
+func systemManagedHash() string {
+	return contentHash(systemScript)
+}
+
 func setupSystem(cfg config) (commandResult, error) {
-	return runRemoteScript(cfg, 15*time.Minute, systemScript)
+	script := systemScript +
+		"install -d -m 0755 /var/lib/cloud-charm\n" +
+		"printf '%s\\n' " + shellQuote(systemManagedHash()) + " >" + shellQuote(systemManagedHashFile) + "\n"
+	return runRemoteScript(cfg, 15*time.Minute, script)
 }
