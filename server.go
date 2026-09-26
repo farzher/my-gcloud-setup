@@ -25,15 +25,19 @@ fi
 
 SWAP_BYTES=1073741824
 if [ -f /swapfile ] && [ "$(stat -c %s /swapfile 2>/dev/null || echo 0)" != "$SWAP_BYTES" ]; then
-  swapoff /swapfile 2>/dev/null || true
+  if swapon --show=NAME --noheadings | grep -qx /swapfile; then
+    swapoff /swapfile
+  fi
   rm -f /swapfile
 fi
 if [ ! -f /swapfile ]; then
   fallocate -l 1G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
-  chmod 600 /swapfile
-  mkswap /swapfile >/dev/null
 fi
-swapon --show=NAME --noheadings | grep -qx /swapfile || swapon /swapfile
+chmod 600 /swapfile
+if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+fi
 grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
 cat >/etc/sysctl.d/90-cloud-low-memory.conf <<'SYSCTL'
 vm.swappiness=10
