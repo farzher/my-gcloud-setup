@@ -396,7 +396,7 @@ func firstMissingStep(s cloudState, cfg config) int {
 		s.HermesReady,
 		s.ChatGPTReady,
 		s.GitHubReady,
-		s.WebReady,
+		s.WebInstalled,
 		domainOptional || s.DNSReady,
 		domainOptional || s.HTTPSReady,
 		s.VerifyReady,
