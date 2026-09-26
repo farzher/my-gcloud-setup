@@ -122,9 +122,9 @@ func runChatGPTAuth(project string) error {
 	fmt.Fprintln(os.Stdout, "Use the code shown below.")
 	fmt.Fprintln(os.Stdout)
 
+	remote := "exec sudo -n env PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin HERMES_HOME=/root/.hermes hermes auth add openai-codex --type oauth"
 	cmd := exec.Command("gcloud", "compute", "ssh", vmName,
-		"--project="+project, "--zone="+zone,
-		"--command=exec sudo -n -i hermes auth add openai-codex --type oauth", "--", "-t")
+		"--project="+project, "--zone="+zone, "--command="+remote, "--", "-t")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
 		return err
