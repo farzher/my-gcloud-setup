@@ -96,41 +96,15 @@ settings = {
 for path, value in settings.items():
     set_value(path, value)
 
-save_config(cfg, merge_existing=False)
-remove_pristine_bundled_skills(dry_run=False)
-`
-}
-
-func buildChatGPTConfigModule() string {
-	return `from hermes_cli.config import read_raw_config, save_config
-
-cfg = read_raw_config()
-
-def set_value(path, value):
-    node = cfg
-    parts = path.split(".")
-    for part in parts[:-1]:
-        child = node.get(part)
-        if not isinstance(child, dict):
-            child = {}
-            node[part] = child
-        node = child
-    node[parts[-1]] = value
-
-def unset_value(path):
-    node = cfg
-    parts = path.split(".")
-    for part in parts[:-1]:
-        node = node.get(part)
-        if not isinstance(node, dict):
-            return
-    node.pop(parts[-1], None)
-
 set_value("model.provider", "openai-codex")
 set_value("model.default", "` + chatGPTModel + `")
 set_value("agent.reasoning_effort", "` + chatGPTEffort + `")
-unset_value("model.base_url")
+model = cfg.get("model")
+if isinstance(model, dict):
+    model.pop("base_url", None)
+
 save_config(cfg, merge_existing=False)
+remove_pristine_bundled_skills(dry_run=False)
 `
 }
 
@@ -173,40 +147,54 @@ cat >/root/.hermes/SOUL.md <<'SOUL'
 ` + hermesSoul + `SOUL
 fi
 
-MANAGED_MODULE=/root/.hermes/hermes-agent/_cloud_managed_config.py
 INSTALLER=""
-trap 'rm -f "$MANAGED_MODULE"; if [ -n "${INSTALLER:-}" ]; then rm -f "$INSTALLER"; fi' EXIT
+MANAGED_SCRIPT="$(mktemp)"
+trap 'rm -f "$MANAGED_SCRIPT"; if [ -n "${INSTALLER:-}" ]; then rm -f "$INSTALLER"; fi' EXIT
 
 # A managed-config hash change means our settings changed, not Hermes itself.
-# Reuse any published Hermes command and install only when it is absent.
+# Reuse an existing source install and only run the low-memory installer when
+# its published command is absent.
 HERMES="$(command -v hermes || true)"
 if [ -z "$HERMES" ] || [ ! -d /root/.hermes/hermes-agent/.git ] || [ ! -x /root/.hermes/hermes-agent/.hermes/bin/hermes ]; then
   INSTALLER="$(mktemp)"
   curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "$INSTALLER"
 
-  # Keep the server install lean. Do not run upstream's products stage: it
-  # builds TUI/web products that this headless 1 GB server does not need.
-  for stage in repository venv python-deps config; do
-    bash "$INSTALLER" --stage "$stage" --skip-browser
+  # Source the installer once instead of starting it separately for every
+  # stage. The heavy products stage is intentionally omitted on this server.
+  source "$INSTALLER"
+  SKIP_BROWSER=true
+  check_platform
+  for stage in prerequisites repository venv python-deps config; do
+    run_stage "$stage"
   done
 
-  # Publish only the command launchers, then mark the bootstrap complete.
   python3 /root/.hermes/hermes-agent/hermes_cli/_launchers.py /root/.local/bin
-  bash "$INSTALLER" --stage complete --skip-browser
+  run_stage complete
   HERMES="$(command -v hermes)"
 fi
 [ -n "$HERMES" ]
 
-# One Hermes startup applies every managed setting. Starting Hermes repeatedly
-# is extremely expensive on e2-micro because each launch performs source/runtime
-# bookkeeping, so never shell out once per config key.
-cat >"$MANAGED_MODULE" <<'PY'
+# Run all managed configuration in one Hermes runtime startup. The temporary
+# script stays outside the Hermes git checkout so startup/update checks never
+# see our provisioning helper as an untracked working-tree change.
+cat >"$MANAGED_SCRIPT" <<'PY'
 ` + buildHermesManagedConfigModule() + `PY
-hermes --run-module _cloud_managed_config >/dev/null
-rm -f "$MANAGED_MODULE"
+python3 - "$MANAGED_SCRIPT" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+root = Path("/root/.hermes/hermes-agent")
+sys.path.insert(0, str(root))
+from hermes_cli._launchers import runtime_command
+
+script = sys.argv[1]
+code = "exec(compile(open(" + repr(script) + ", 'rb').read(), " + repr(script) + ", 'exec'))"
+cmd = runtime_command(root, code=code)
+os.execv(cmd[0], cmd)
+PY
 `
 }
-
 func hermesManagedHash() string {
 	return contentHash(buildHermesInstallScriptBody())
 }
@@ -216,27 +204,13 @@ func chatGPTManagedHash() string {
 }
 
 func buildHermesInstallScript() string {
-	return buildHermesInstallScriptBody() + "printf '%s\\n' " + shellQuote(hermesManagedHash()) + " >" + shellQuote(hermesManagedHashFile) + "\n"
+	return buildHermesInstallScriptBody() +
+		"printf '%s\\n' " + shellQuote(hermesManagedHash()) + " >" + shellQuote(hermesManagedHashFile) + "\n" +
+		"printf '%s\\n' " + shellQuote(chatGPTManagedHash()) + " >" + shellQuote(chatGPTManagedHashFile) + "\n"
 }
 
 func installHermes(cfg config) (commandResult, error) {
 	return runRemoteScript(cfg, 30*time.Minute, buildHermesInstallScript())
-}
-
-func configureChatGPT(project, zone string) (commandResult, error) {
-	module := "/root/.hermes/hermes-agent/_cloud_chatgpt_config.py"
-	script := `set -Eeuo pipefail
-export PATH="/root/.local/bin:/usr/local/bin:$PATH"
-MODULE=` + shellQuote(module) + `
-trap 'rm -f "$MODULE"' EXIT
-cat >"$MODULE" <<'PY'
-` + buildChatGPTConfigModule() + `PY
-hermes --run-module _cloud_chatgpt_config >/dev/null
-printf '%s\\n' ` + shellQuote(chatGPTManagedHash()) + ` >` + shellQuote(chatGPTManagedHashFile) + `
-`
-	remote := "sudo -n -i bash -lc " + shellQuote(script)
-	return runTimeout(90*time.Second, "gcloud", "compute", "ssh", vmName,
-		"--project="+project, "--zone="+zone, "--command="+remote, "--quiet")
 }
 
 func ensureChatGPT(cfg config) (commandResult, error) {
@@ -247,9 +221,8 @@ func ensureChatGPT(cfg config) (commandResult, error) {
 	if !loggedIn {
 		return commandResult{}, errChatGPTAuthRequired
 	}
-	return configureChatGPT(cfg.Project, cfg.zone())
+	return commandResult{}, nil
 }
-
 func chatGPTLoggedIn(output string) bool {
 	x := strings.ToLower(output)
 	if strings.Contains(x, "not logged") || strings.Contains(x, "not authenticated") || strings.Contains(x, "missing") {
