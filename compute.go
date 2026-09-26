@@ -283,7 +283,16 @@ func destroyCmd(cfg config, releaseIP bool) tea.Cmd {
 func runTimeout(timeout time.Duration, name string, args ...string) (commandResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return run(ctx, name, args...)
+	r, err := run(ctx, name, args...)
+	if ctx.Err() != nil {
+		msg := fmt.Sprintf("timed out after %s", timeout)
+		if r.Stderr != "" {
+			r.Stderr += "\n"
+		}
+		r.Stderr += "ERROR: " + msg
+		return r, errors.New(msg)
+	}
+	return r, err
 }
 
 func run(ctx context.Context, name string, args ...string) (commandResult, error) {
