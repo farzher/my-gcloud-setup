@@ -168,7 +168,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.servicesRefreshing = false
+		if msg.err != nil {
+			m.lastErr = msg.err
+			m.lastOutput = msg.err.Error()
+			m.statusText = "Service check failed · R retry"
+			return m, nil
+		}
 		m.servicesLoaded = true
+		m.statusText = ""
 		m.state.SSHReady = msg.state.SSHReady
 		m.state.SystemReady = msg.state.SystemReady
 		m.state.HermesReady = msg.state.HermesReady
